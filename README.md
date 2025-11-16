@@ -103,7 +103,7 @@ The app will be available at `http://localhost:8000`.
 
 ### Viewing the Knowledge Graph
 
-1. Click the "🗺️ View Mindmap" button in the sidebar
+1. Click the "🧠 View Mindmap" button in the sidebar
 2. **Global Mindmap**: Shows hierarchical tree of topics across all papers
    - Papers organized by themes and subtopics
    - Click nodes to expand/collapse
@@ -112,6 +112,13 @@ The app will be available at `http://localhost:8000`.
    - Displays main topics and subtopics from that paper
    - Use "Expand All" and "Collapse All" buttons to control view
 
+4. **Custom Mindmaps (User Instructions)**
+   - Next to "🧠 View Mindmap" there is a small ✏️ icon.
+   - Clicking it opens a prompt where you can enter **mindmap instructions** (a free-text query).
+   - Example: "Create only two top-level themes, one for physical fatigue and one for stress."
+   - When no paper is selected, these instructions influence how the **global** mindmap is generated for that view (the stored default mindmap is not overwritten).
+   - Structural guarantees still hold: valid JSON, canonical paper titles as leaf nodes, and configured depth/size limits.
+
 ### Features
 
 - **Conversation History**: Chat maintains context across messages
@@ -119,6 +126,9 @@ The app will be available at `http://localhost:8000`.
 - **Streaming Responses**: See answers as they're generated
 - **Markdown Formatting**: Responses include tables, lists, and code blocks
 - **Token Tracking**: Monitor API usage in real-time
+- **Canonical Paper Titles**: Each paper has a consistent canonical title (e.g. `filename (inferred title)`), used in the sidebar, vector DB, and mindmap leaves.
+- **Richer Mindmaps**: Mindmaps are based on keyword-biased micro-summaries per paper (not just first chunks) and post-processed to normalize and de-duplicate similar concept nodes.
+- **Custom Mindmaps**: User-provided instructions can steer how the global mindmap is organized without changing core constraints.
 
 ## Project Structure
 
@@ -213,6 +223,8 @@ Edit `config.toml` to customize:
 ✅ Paper-specific context selection (click to scope chat and mindmap)  
 ✅ AI-generated knowledge graphs (global and paper-specific)  
 ✅ Interactive D3.js mindmap visualization (NotebookLM-style)  
+✅ Canonical titles and concept-focused mindmap structure  
+✅ Custom mindmap instructions for alternative global views  
 ✅ Streaming responses with markdown formatting  
 
 ## API Documentation
