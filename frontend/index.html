@@ -167,6 +167,7 @@
             padding: 12px 16px;
             border-radius: 12px;
             line-height: 1.5;
+            position: relative;
         }
 
         .message.user {
@@ -180,6 +181,32 @@
             background: #f0f0f0;
             color: #333;
             white-space: pre-wrap;
+        }
+
+        .copy-button {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            background: #ffffffcc;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            padding: 2px 6px;
+            opacity: 0;
+            transition: opacity 0.15s ease, background-color 0.15s ease;
+        }
+
+        .message.assistant:hover .copy-button {
+            opacity: 1;
+        }
+
+        .copy-button:hover {
+            background: #f3f3f3;
+        }
+
+        .copy-button.copied {
+            background: #e6ffe6;
         }
 
         .message-content {
@@ -572,7 +599,15 @@
             const messageDiv = document.createElement('div');
             messageDiv.className = 'message assistant';
             messageDiv.id = 'streaming-message';
-            
+
+            const copyBtn = document.createElement('button');
+            copyBtn.className = 'copy-button';
+            copyBtn.type = 'button';
+            copyBtn.textContent = '⧉';
+            copyBtn.title = 'Copy response';
+            copyBtn.onclick = () => copyAssistantMessage(messageDiv);
+            messageDiv.appendChild(copyBtn);
+
             const contentDiv = document.createElement('div');
             contentDiv.className = 'message-content';
             contentDiv.id = 'streaming-content';
@@ -689,7 +724,17 @@
             
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${role}`;
-            
+
+            if (role === 'assistant') {
+                const copyBtn = document.createElement('button');
+                copyBtn.className = 'copy-button';
+                copyBtn.type = 'button';
+                copyBtn.textContent = '⧉';
+                copyBtn.title = 'Copy response';
+                copyBtn.onclick = () => copyAssistantMessage(messageDiv, content);
+                messageDiv.appendChild(copyBtn);
+            }
+
             // Create content div
             const contentDiv = document.createElement('div');
             contentDiv.className = 'message-content';
@@ -718,6 +763,47 @@
             
             chatContainer.appendChild(messageDiv);
             chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        async function copyAssistantMessage(messageElement, fallbackText) {
+            try {
+                const contentEl = messageElement.querySelector('.message-content');
+                let textToCopy = fallbackText || '';
+
+                if (!textToCopy && contentEl) {
+                    // Prefer the underlying markdown/text, but fall back to visible text
+                    textToCopy = contentEl.textContent || '';
+                }
+
+                if (!textToCopy) return;
+
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(textToCopy);
+                } else {
+                    const textarea = document.createElement('textarea');
+                    textarea.value = textToCopy;
+                    textarea.style.position = 'fixed';
+                    textarea.style.opacity = '0';
+                    document.body.appendChild(textarea);
+                    textarea.focus();
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                }
+
+                const btn = messageElement.querySelector('.copy-button');
+                if (btn) {
+                    const original = btn.textContent;
+                    btn.textContent = '✓';
+                    btn.classList.add('copied');
+                    setTimeout(() => {
+                        btn.textContent = original;
+                        btn.classList.remove('copied');
+                    }, 1200);
+                }
+            } catch (e) {
+                console.error('Copy failed', e);
+            }
         }
 
         async function updateTokenStats() {
