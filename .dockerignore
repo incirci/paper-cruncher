@@ -1,0 +1,27 @@
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv
+env/
+venv/
+build/
+dist/
+.mypy_cache/
+.pytest_cache/
+.vscode/
+.DS_Store
+node_modules/
+
+# Local data and caches
+data/vectordb/
+data/conversations.db
+data/mindmap/graph.json
+
+# Papers can be mounted as a volume instead of baked in
+papers/
+
+# Git
+.git
+.gitignore

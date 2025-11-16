@@ -1,0 +1,56 @@
+[app]
+name = "Journal Article AI Assistant"
+version = "1.0.0"
+papers_folder = "./papers"
+host = "localhost"
+port = 8000
+
+[agent]
+model = "gemini-2.5-flash-preview-09-2025"  #"gemini-2.5-flash-preview-09-2025"
+max_context_tokens = 1000000 # max 1,048,576
+max_response_tokens = 65536  # max 65,536
+temperature = 0.7
+# Orchestrator-specific settings (used only for planning)
+# Choose a stable, lower-temp model to reduce safety blocks
+orchestrator_model = "gemini-2.5-flash-preview-09-2025"
+orchestrator_temperature = 0.2
+orchestrator_max_output_tokens = 65536
+
+[memory]
+persist_across_sessions = true
+max_history_messages = 50
+enable_summarization = true
+summarization_threshold = 20
+
+[tokens]
+track_usage = true
+session_budget = 1000000
+enable_warnings = true
+warning_threshold = 0.8
+
+[database]
+vector_db_path = "./data/vectordb"
+conversation_db_path = "./data/conversations.db"
+
+[chunking]
+chunk_size = 1000
+chunk_overlap = 200
+max_chunks_per_query = 10  # Increased from 5 for better coverage
+
+[mindmap]
+# Control the depth and breadth of the generated knowledge graph
+max_depth = 5  # Maximum tree depth (Root > Theme > Subtheme > Paper)
+min_themes = 3  # Minimum number of top-level themes
+max_themes = 7  # Maximum number of top-level themes
+node_name_max_length = 60  # Maximum characters for node names
+
+[image]
+enabled = false
+model = "models/gemini-2.5-flash-image-preview"
+mime_type = "image/png"
+width = 1024
+height = 1024
+
+[logging]
+level = "INFO"
+format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"

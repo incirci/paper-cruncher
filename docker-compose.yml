@@ -1,0 +1,13 @@
+services:
+  app:
+    build: .
+    container_name: cruncher-app
+    ports:
+      - "8000:8000"
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+    volumes:
+      - ./papers:/app/papers
+      - ./data:/app/data
+      - ./config.toml:/app/config.toml:ro
+    restart: unless-stopped

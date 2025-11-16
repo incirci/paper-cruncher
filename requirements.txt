@@ -1,0 +1,36 @@
+# Web Framework
+fastapi
+uvicorn[standard]
+python-multipart
+
+# PDF Processing
+PyMuPDF
+pypdf
+
+# AI & Embeddings
+google-generativeai
+
+# Vector Database
+chromadb
+
+# Database
+sqlalchemy
+aiosqlite
+
+# Configuration
+python-dotenv
+toml
+
+# Utilities
+pydantic
+pydantic-settings
+
+# Testing
+pytest
+pytest-asyncio
+httpx
+
+# Code Quality
+black
+flake8
+mypy
