@@ -28,6 +28,7 @@ cruncher/
    - FastAPI endpoints for REST API
    - Request/response models
    - Route handlers
+   - Mindmap API (`/api/mindmap`) and papers API (`/api/papers`) for knowledge graph rebuild and retrieval
 
 2. **Core Layer** (`backend/core/`)
    - Configuration management
@@ -35,35 +36,45 @@ cruncher/
    - Application initialization
 
 3. **Services Layer** (`backend/services/`)
-   - PDF processing service
-   - Vector database service
-   - AI agent service (Orchestrator-Worker)
+   - PDF processing service (extracts text, metadata, and chunks)
+   - Vector database service (ChromaDB wrapper, semantic search, paper micro-summaries)
+   - AI agent service (orchestrator-worker RAG)
+   - Mindmap service (LLM-based graph generation + post-processing)
    - Conversation management
    - Token tracking service
 
 4. **Models Layer** (`backend/models/`)
-   - Pydantic schemas
-   - Database models
-   - Data transfer objects
+   - Pydantic schemas and DTOs
+   - Paper metadata including a canonical title used consistently across UI, vector DB, and mindmap
 
 5. **Utils Layer** (`backend/utils/`)
    - Token counters
-   - Text chunking
-   - Helper functions
+   - Text chunking helpers
+   - Misc helper functions
 
 ### Data Flow
 
-```
-User Request → FastAPI → Service Layer → AI Agent/Vector DB
-                    ↓
-              Response ← Gemini API ← Context Builder
+```text
+User Request → FastAPI → Service Layer → AI Agent / Vector DB
+                         ↓                  ↓
+                  Mindmap Service      ChromaDB (paper_chunks)
+                         ↓
+                 Gemini (LLM models)
+                         ↓
+                      Response
 ```
 
-### Orchestrator-Worker RAG Pipeline
+### Orchestrator-Worker RAG & Mindmap Pipeline
 
-```
+```text
 User Query → Orchestrator (plans commands) → Worker (executes retrieval) →
 Context Building → Prompt → Gemini API (streaming) → Response
+
+Index Papers → PDF Processor → VectorDBService.add_paper_chunks
+             → VectorDBService.get_paper_summaries (micro-summaries)
+             → MindmapService.build_prompt (concept-focused)
+             → Gemini (graph JSON) → MindmapService._normalize_and_deduplicate
+             → data/mindmap/graph.json → D3.js viewer (/mindmap)
 ```
 
 ## Technology Stack
@@ -73,6 +84,7 @@ Context Building → Prompt → Gemini API (streaming) → Response
 - **Vector DB**: ChromaDB
 - **Database**: SQLite (conversations)
 - **PDF Processing**: PyMuPDF
+- **Visualization**: D3.js (CDN) for the mindmap viewer
 
 ## Key Design Principles
 
@@ -83,4 +95,5 @@ Context Building → Prompt → Gemini API (streaming) → Response
 - Testable architecture
 - Prompt engineering for better AI responses
 - Orchestrator-Worker is the single retrieval mode (no toggles)
-- Structured output formatting via system instructions
+- Canonical paper titles used consistently across backend and frontend
+- Mindmap generation is deterministic, concept-focused, and post-processed for normalization

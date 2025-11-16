@@ -74,6 +74,10 @@ Add an AI-generated hierarchical knowledge structure to organize topics and pape
 - [x] API: `POST /api/chat` - accept optional paper_id, scope retrieval to selected paper
 - [x] UI: `/mindmap` page - fetch with paper_id if selected, render accordingly
 - [x] Service: Update AI agent to handle paper_id filter for focused retrieval
+- [x] Backend: Introduce canonical paper titles in `PaperMetadata` and propagate to vector DB, sidebar, and mindmap leaves
+- [x] Backend: Implement keyword-biased micro-summaries in `VectorDBService.get_paper_summaries` for concept-rich paper descriptions
+- [x] Backend: Tighten `MindmapService.build_prompt` to focus internal node names on conceptual content and avoid generic section/review labels
+- [x] Backend: Add post-processing (`_normalize_and_deduplicate`) to merge duplicate internal concept nodes while preserving paper leaves
 
 ## Remaining Optional Enhancements
 

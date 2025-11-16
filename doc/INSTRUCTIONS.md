@@ -138,6 +138,16 @@ After indexing, automatically build a concise knowledge graph representing:
   1) Index PDFs into the vector database, and
   2) Invoke AI to extract topics/relationships and generate a knowledge graph.
 
+Internally, the pipeline is:
+
+1. PDFs are processed into text chunks and `PaperMetadata` records.
+2. Each paper gets a **canonical title** (e.g. `filename (inferred_title)` when helpful) used consistently in the sidebar, vector DB, and mindmap.
+3. `VectorDBService` stores chunks in ChromaDB and builds a short, keyword-biased **micro-summary** per paper from representative chunks.
+4. `MindmapService` calls the LLM with a concept-focused prompt that:
+   - Uses canonical titles for leaves.
+   - Asks for internal node names that describe conceptual content (what/why/how/context), not section names or publication types.
+5. The raw JSON tree from the LLM is post-processed to normalize and de-duplicate internal concept nodes before being persisted.
+
 - **Paper-scoped mindmap**: When viewing mindmap with a paper selected:
   - Generate a hierarchical tree with the selected paper as the root node
   - Show topics, subtopics, and sub-subtopics covered in that specific paper
@@ -198,3 +208,4 @@ After indexing, automatically build a concise knowledge graph representing:
 - Prefer stable, low-temperature generation for the structure extraction step.
 - Handle empty/no-paper states gracefully.
 - Nodes should be collapsible for better navigation of complex structures.
+- Internal node names should be concept-focused and non-generic, while paper leaves must use the canonical titles from the papers list.
