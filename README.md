@@ -119,6 +119,12 @@ The app will be available at `http://localhost:8000`.
    - When no paper is selected, these instructions influence how the **global** mindmap is generated for that view (the stored default mindmap is not overwritten).
    - Structural guarantees still hold: valid JSON, canonical paper titles as leaf nodes, and configured depth/size limits.
 
+   **Example instructions to try:**
+
+   - "Create only two top-level themes: one for physical fatigue and one for stress, and group all papers accordingly."
+   - "Build a shallow two-level map that focuses only on application contexts, with papers grouped under their main real-world use cases."
+   - "Emphasize methodological differences: group papers first by type of modeling or analysis approach, then list the papers under each approach."
+
 ### Features
 
 - **Conversation History**: Chat maintains context across messages
