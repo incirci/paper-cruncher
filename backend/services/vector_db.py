@@ -179,57 +179,120 @@ class VectorDBService:
         ]
 
     def get_paper_summaries(self) -> List[dict]:
-        """
-        Get lightweight summaries of all papers (first chunk only - usually contains title/abstract).
+        """Get lightweight, concept-focused summaries of all papers.
+
+        This method builds a short "micro-summary" for each paper by
+        selecting chunks that are likely to contain substantive content
+        (problem, approach, findings) rather than boilerplate, and
+        compressing them into a single, dense paragraph.
 
         Returns:
-            List of dictionaries with paper_id, filename, canonical title, and summary content
+            List of dictionaries with paper_id, filename, canonical title,
+            and summary content.
         """
         papers = self.get_all_papers()
-        summaries = []
-        
+        summaries: List[dict] = []
+
+        # Simple, domain-agnostic keywords that often signal substantive content
+        strong_keywords = [
+            "we propose",
+            "we present",
+            "we develop",
+            "our method",
+            "our approach",
+            "this work",
+            "this study",
+            "we show",
+            "we demonstrate",
+            "results show",
+            "our results",
+            "in this study",
+        ]
+
+        def score_chunk(text: str, index: int, total: int) -> float:
+            """Heuristically score a chunk for micro-summary selection."""
+            if not text:
+                return 0.0
+
+            t = text.lower()
+            score = 0.0
+
+            # Prefer chunks with strong keywords (indicative of contributions/results)
+            for kw in strong_keywords:
+                if kw in t:
+                    score += 3.0
+
+            # Light preference for chunks with multiple sentences
+            sentence_separators = t.count(".") + t.count("!") + t.count("?")
+            if sentence_separators > 1:
+                score += 1.0
+
+            # Positional bias: early, middle, and late chunks
+            if index == 0:
+                score += 1.5
+            elif index == total - 1:
+                score += 1.0
+            elif index == total // 2:
+                score += 1.0
+
+            return score
+
+        def build_micro_summary(chunks: List[str]) -> str:
+            """Construct a short, dense summary paragraph from top chunks."""
+            if not chunks:
+                return ""
+
+            total = len(chunks)
+            scored = [
+                (score_chunk(text or "", idx, total), idx, text or "")
+                for idx, text in enumerate(chunks)
+            ]
+
+            # Sort by score descending, then by original order
+            scored.sort(key=lambda x: (-x[0], x[1]))
+
+            selected_texts: List[str] = []
+            for score, _, text in scored[:3]:  # take up to top 3 chunks
+                if score <= 0.0:
+                    continue
+                cleaned = " ".join(text.split())  # normalize whitespace
+                if cleaned:
+                    selected_texts.append(cleaned[:400])
+
+            if not selected_texts:
+                # Fallback: use first, middle, last if scoring found nothing
+                indices = sorted(set([0, total // 2, max(total - 1, 0)]))
+                for idx in indices:
+                    if 0 <= idx < total:
+                        cleaned = " ".join((chunks[idx] or "").split())
+                        if cleaned:
+                            selected_texts.append(cleaned[:400])
+
+            if not selected_texts:
+                return ""
+
+            # Join into a single paragraph and trim to a reasonable length
+            paragraph = " ".join(selected_texts)
+            return paragraph[:1200]
+
         for paper in papers:
-            # Get only the first chunk (chunk_index=0) which typically has title/abstract
-            # ChromaDB requires $and operator for multiple conditions
-            results = self.collection.get(
-                where={
-                    "$and": [
-                        {"paper_id": paper["paper_id"]},
-                        {"chunk_index": 0}
-                    ]
-                },
-                limit=1
-            )
-            
-            if results["ids"] and results["documents"]:
-                summaries.append({
+            results = self.collection.get(where={"paper_id": paper["paper_id"]})
+            docs = results.get("documents") or []
+
+            micro_summary = build_micro_summary(docs)
+            if not micro_summary:
+                # Fallback: just use the canonical title as summary
+                micro_summary = paper.get("paper_title", paper["paper_filename"])
+
+            summaries.append(
+                {
                     "paper_id": paper["paper_id"],
                     "paper_filename": paper["paper_filename"],
                     "paper_title": paper.get("paper_title", paper["paper_filename"]),
-                    "summary": results["documents"][0][:500],  # First 500 chars
-                })
-            else:
-                # Fallback: get any chunk from this paper
-                results = self.collection.get(
-                    where={"paper_id": paper["paper_id"]},
-                    limit=1
-                )
-                if results["ids"] and results["documents"]:
-                    summaries.append({
-                        "paper_id": paper["paper_id"],
-                        "paper_filename": paper["paper_filename"],
-                        "paper_title": paper.get("paper_title", paper["paper_filename"]),
-                        "summary": results["documents"][0][:500],
-                    })
-                else:
-                    # Last fallback: just the filename
-                    summaries.append({
-                        "paper_id": paper["paper_id"],
-                        "paper_filename": paper["paper_filename"],
-                        "paper_title": paper.get("paper_title", paper["paper_filename"]),
-                        "summary": paper["paper_title"],
-                    })
-        
+                    "summary": micro_summary,
+                }
+            )
+
         return summaries
 
 

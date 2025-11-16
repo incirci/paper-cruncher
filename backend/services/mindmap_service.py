@@ -62,6 +62,9 @@ class MindmapService:
         return (
             "You are an information architect. From the papers and summaries below, "
             "produce a hierarchical knowledge tree (NotebookLM-style) organized by nested topics and subtopics.\n\n"
+            "Focus on *conceptual content* rather than document structure or publication type. "
+            "Internal node names should capture the key ideas, phenomena, approaches, and contexts described in the papers, "
+            "not generic labels.\n\n"
             f"PAPERS (only these are allowed):\n{papers_block}\n\n"
             "Output STRICTLY valid JSON (no markdown, no backticks, no explanation). Use exactly this recursive structure:\n"
             "{\n"
@@ -87,7 +90,9 @@ class MindmapService:
             f"- Depth requirement: {depth_guidance}\n"
             f"- Maximum allowed depth is {max_depth} levels from root to paper.\n"
             "- A paper may appear under multiple branches if truly relevant, but NEVER duplicate a paper under the same branch.\n"
-            f"- Keep node names concise (≤ {max_node_length} characters), descriptive, and ASCII-safe.\n"
+            f"- Keep node names concise ( {max_node_length} characters), descriptive, and ASCII-safe.\n"
+            "- Do NOT use generic structural or publication-type labels as node names (for example: 'Introduction', 'Methods', 'Results', 'Discussion', 'Conclusion', 'Overview', 'Review', 'State of the Art', 'Literature Review').\n"
+            "- Internal node names should summarize what is being studied or addressed and, where applicable, how or in what context (e.g., combining phenomenon, signals/inputs, approaches, or settings), without mentioning that it is a section or a review.\n"
             "- Sort children alphabetically by 'name' at every level for determinism.\n"
             "- Output ONLY JSON. No markdown, no commentary, no code fences.\n"
         )
@@ -121,6 +126,9 @@ class MindmapService:
         prompt = self.build_prompt(summaries)
         response = self.model.generate_content(prompt)
         tree = self._safe_parse_json(response.text or "")
+
+        # Post-process the tree to normalize and de-duplicate internal concepts
+        tree = self._normalize_and_deduplicate(tree)
 
         return tree
     
@@ -190,3 +198,60 @@ class MindmapService:
         tree = self.generate_graph()
         self.save_graph(tree)
         return tree
+
+    # ------------------------------------------------------------------
+    # Normalization and de-duplication of concept nodes
+    # ------------------------------------------------------------------
+
+    def _normalize_and_deduplicate(self, tree: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize concept node names and merge near-duplicates.
+
+        - Paper leaves (nodes with no children) are left untouched.
+        - Internal concept nodes are normalized (case/whitespace/punctuation).
+        - Sibling concept nodes with the same normalized name are merged and
+          their children concatenated.
+        """
+
+        def normalize_name(name: str) -> str:
+            # Lowercase, strip whitespace, collapse internal spaces
+            simplified = " ".join(name.strip().lower().split())
+            # Strip some trivial punctuation at the ends
+            return simplified.strip(".:-")
+
+        def process_node(node: Dict[str, Any]) -> Dict[str, Any]:
+            children = node.get("children") or []
+            if not children:
+                # Leaf (typically a paper) – do not touch
+                return {"name": node.get("name", ""), "children": []}
+
+            # First recursively process all children
+            processed_children: List[Dict[str, Any]] = [process_node(c) for c in children]
+
+            # Group non-leaf children by normalized name and merge duplicates
+            grouped: Dict[str, Dict[str, Any]] = {}
+            leaves: List[Dict[str, Any]] = []
+
+            for child in processed_children:
+                cname = child.get("name", "")
+                cchildren = child.get("children") or []
+                if not cchildren:
+                    # Keep paper leaves as-is
+                    leaves.append(child)
+                    continue
+
+                key = normalize_name(cname)
+                if key in grouped:
+                    # Merge: extend children list
+                    grouped[key]["children"].extend(cchildren)
+                else:
+                    # First occurrence; store a copy
+                    grouped[key] = {"name": cname, "children": cchildren}
+
+            # Rebuild children list: merged concept nodes + untouched leaves
+            merged_concepts = list(grouped.values())
+            # Optionally, we could sort, but the LLM prompt already asks for sorting
+            new_children = merged_concepts + leaves
+
+            return {"name": node.get("name", ""), "children": new_children}
+
+        return process_node(tree)
