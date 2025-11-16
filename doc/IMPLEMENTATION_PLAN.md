@@ -83,13 +83,24 @@ Add an AI-generated hierarchical knowledge structure to organize topics and pape
 
 Add support for user-editable mindmap instructions ("mindmap query") to generate alternative tree structures without changing the core architecture.
 
+Completed tasks:
+
+- [x] API: Extend `GET /api/mindmap` to accept an optional `query` parameter that carries user-provided mindmap instructions.
+- [x] Service: Update `MindmapService.generate_graph` / `build_prompt` to accept an optional custom query and include it in the LLM prompt while preserving all structural constraints.
+- [x] Persistence rules: Only persist the default (no custom query) global mindmap to `data/mindmap/graph.json`; treat custom mindmaps as ephemeral responses.
+- [x] Frontend (sidebar): Add an edit icon near the "View Mindmap" button that opens a prompt with the default mindmap instructions, scoped to either all papers or the selected paper.
+- [x] Frontend (mindmap page): Read both `paper_id` and `query` from URL parameters and forward them to `/api/mindmap` when loading the tree.
+
+### ChatGPT-Style UX Enhancements
+
+Add a small set of high-impact UI improvements inspired by the ChatGPT interface.
+
 Planned tasks:
 
-- [ ] API: Extend `GET /api/mindmap` to accept an optional `query` parameter that carries user-provided mindmap instructions.
-- [ ] Service: Update `MindmapService.generate_graph` / `build_prompt` to accept an optional custom query and include it in the LLM prompt while preserving all structural constraints.
-- [ ] Persistence rules: Only persist the default (no custom query) global mindmap to `data/mindmap/graph.json`; treat custom mindmaps as ephemeral responses.
-- [ ] Frontend (sidebar): Add an edit icon near the "View Mindmap" button that opens a small textarea/modal with the default mindmap instructions, scoped to either all papers or the selected paper.
-- [ ] Frontend (mindmap page): Read both `paper_id` and `query` from URL parameters and forward them to `/api/mindmap` when loading the tree.
+- [ ] File/image upload: Add an upload control to the chat input area to attach files/images to the current session and expose them to the backend (initially as metadata and temporary storage, without automatic indexing).
+- [ ] Scroll-to-bottom button: Show a floating "scroll to latest" button when the user scrolls up in a long conversation; clicking jumps to the newest message and re-enables auto-scroll.
+- [ ] New Chat: Add a "New Chat" button that clears the visible chat history and requests a new backend `session_id`, preserving the currently selected paper unless changed by the user.
+- [ ] Per-code-block copy: Enhance markdown rendering so each code block includes its own copy button that copies just that block's content.
 
 ## Remaining Optional Enhancements
 

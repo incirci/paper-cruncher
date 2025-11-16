@@ -160,6 +160,7 @@
             display: flex;
             flex-direction: column;
             gap: 16px;
+            position: relative;
         }
 
         .message {
@@ -262,12 +263,37 @@
             border-radius: 6px;
             overflow-x: auto;
             margin-bottom: 12px;
+            position: relative;
         }
 
         .message-content pre code {
             background: none;
             padding: 0;
             color: inherit;
+        }
+
+        .code-copy-button {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: #ffffff33;
+            border: 1px solid #555;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+            padding: 2px 6px;
+            color: #f8f8f8;
+            opacity: 0;
+            transition: opacity 0.15s ease, background-color 0.15s ease;
+        }
+
+        .message-content pre:hover .code-copy-button {
+            opacity: 1;
+        }
+
+        .code-copy-button.copied {
+            background: #4caf50;
+            border-color: #4caf50;
         }
 
         .message-content blockquote {
@@ -370,6 +396,27 @@
             font-style: italic;
         }
 
+        .scroll-to-bottom {
+            position: fixed;
+            right: 24px;
+            bottom: 96px;
+            padding: 8px 12px;
+            border-radius: 999px;
+            border: 1px solid #ddd;
+            background: #ffffffee;
+            cursor: pointer;
+            font-size: 12px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+            display: none;
+            align-items: center;
+            gap: 4px;
+            z-index: 10;
+        }
+
+        .scroll-to-bottom span {
+            font-size: 14px;
+        }
+
         .empty-state {
             flex: 1;
             display: flex;
@@ -408,6 +455,7 @@
         <div class="header">
             <button class="toggle-sidebar" onclick="toggleSidebar()">☰ Toggle Sidebar</button>
             <div class="stats">
+                <button class="toggle-sidebar" style="margin-right: 12px;" onclick="newChat()">＋ New Chat</button>
                 <span id="tokenStats">Tokens: 0</span>
             </div>
         </div>
@@ -415,6 +463,9 @@
         <div class="chat-container" id="chatContainer">
             <div class="empty-state">Ask a question about the papers</div>
         </div>
+        <button class="scroll-to-bottom" id="scrollToBottomButton" onclick="scrollToBottom()">
+            <span>↓</span> New messages
+        </button>
 
         <div class="input-container">
             <textarea 
@@ -434,6 +485,7 @@
         let isIndexing = false;
         let selectedPaperId = null; // Track selected paper ID
         let mindmapQuery = '';
+        let autoScroll = true;
 
         // Load papers on startup if they were already indexed
         loadPapers();
@@ -444,6 +496,16 @@
                 e.preventDefault();
                 sendMessage();
             }
+        });
+
+        const chatContainerEl = document.getElementById('chatContainer');
+        const scrollBtnEl = document.getElementById('scrollToBottomButton');
+
+        chatContainerEl.addEventListener('scroll', () => {
+            const threshold = 80;
+            const atBottom = chatContainerEl.scrollHeight - chatContainerEl.scrollTop - chatContainerEl.clientHeight < threshold;
+            autoScroll = atBottom;
+            scrollBtnEl.style.display = autoScroll ? 'none' : 'flex';
         });
 
         function toggleSidebar() {
@@ -593,7 +655,9 @@
             loadingDiv.textContent = 'Thinking...';
             loadingDiv.id = 'loading';
             chatContainer.appendChild(loadingDiv);
-            chatContainer.scrollTop = chatContainer.scrollHeight;
+            if (autoScroll) {
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
             
             // Create assistant message div for streaming
             const messageDiv = document.createElement('div');
@@ -653,10 +717,13 @@
                             fullText += data.text;
                             if (typeof marked !== 'undefined') {
                                 contentDiv.innerHTML = marked.parse(fullText);
+                                attachCodeBlockCopyButtons(contentDiv);
                             } else {
                                 contentDiv.textContent = fullText;
                             }
-                            chatContainer.scrollTop = chatContainer.scrollHeight;
+                            if (autoScroll) {
+                                chatContainer.scrollTop = chatContainer.scrollHeight;
+                            }
                             return;
                         }
                         if (data.type === 'done') {
@@ -747,6 +814,7 @@
                     gfm: true
                 });
                 contentDiv.innerHTML = marked.parse(content);
+                attachCodeBlockCopyButtons(contentDiv);
             } else {
                 // For user messages, use plain text
                 contentDiv.textContent = content;
@@ -762,7 +830,9 @@
             }
             
             chatContainer.appendChild(messageDiv);
-            chatContainer.scrollTop = chatContainer.scrollHeight;
+            if (autoScroll) {
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
         }
 
         async function copyAssistantMessage(messageElement, fallbackText) {
@@ -804,6 +874,71 @@
             } catch (e) {
                 console.error('Copy failed', e);
             }
+        }
+
+        function attachCodeBlockCopyButtons(container) {
+            const blocks = container.querySelectorAll('pre > code');
+            blocks.forEach((codeEl) => {
+                const pre = codeEl.parentElement;
+                if (!pre || pre.querySelector('.code-copy-button')) {
+                    return;
+                }
+
+                const btn = document.createElement('button');
+                btn.className = 'code-copy-button';
+                btn.type = 'button';
+                btn.textContent = 'Copy';
+                btn.title = 'Copy code';
+                btn.onclick = async (e) => {
+                    e.stopPropagation();
+                    const text = codeEl.textContent || '';
+                    if (!text) return;
+
+                    try {
+                        if (navigator.clipboard && navigator.clipboard.writeText) {
+                            await navigator.clipboard.writeText(text);
+                        } else {
+                            const textarea = document.createElement('textarea');
+                            textarea.value = text;
+                            textarea.style.position = 'fixed';
+                            textarea.style.opacity = '0';
+                            document.body.appendChild(textarea);
+                            textarea.focus();
+                            textarea.select();
+                            document.execCommand('copy');
+                            document.body.removeChild(textarea);
+                        }
+
+                        btn.classList.add('copied');
+                        const original = btn.textContent;
+                        btn.textContent = 'Copied';
+                        setTimeout(() => {
+                            btn.textContent = original;
+                            btn.classList.remove('copied');
+                        }, 1200);
+                    } catch (err) {
+                        console.error('Code block copy failed', err);
+                    }
+                };
+
+                pre.appendChild(btn);
+            });
+        }
+
+        function scrollToBottom() {
+            const chatContainer = document.getElementById('chatContainer');
+            autoScroll = true;
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            const scrollBtnEl = document.getElementById('scrollToBottomButton');
+            scrollBtnEl.style.display = 'none';
+        }
+
+        function newChat() {
+            const chatContainer = document.getElementById('chatContainer');
+            chatContainer.innerHTML = '<div class="empty-state">Ask a question about the papers</div>';
+            sessionId = null;
+            autoScroll = true;
+            document.getElementById('tokenStats').textContent = 'Tokens: 0';
         }
 
         async function updateTokenStats() {

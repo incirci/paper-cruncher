@@ -26,6 +26,15 @@ Web application
 
 - Function same as ChatGPT app
 - Primary area for user-AI agent interaction
+- Support a **scroll-to-bottom** affordance when the user scrolls up in a long conversation so it is easy to jump back to the newest answer
+
+#### Chat Session Management
+
+- Provide a **New Chat** control to start a fresh conversation
+- A new chat should:
+  - Clear the visible message history in the UI
+  - Start a new backend session (new `session_id`) so token usage and context are tracked separately
+  - Keep the currently selected paper context (if any) unless the user explicitly changes it
 
 ### AI Agent Requirements
 
@@ -49,6 +58,17 @@ Web application
   - Questions are scoped to the selected paper's content
   - Context is clearly indicated to the user
 - **Default behavior**: When no paper is selected, operate across all papers as before
+
+#### Message-Level UX
+
+- For AI responses that contain code blocks, provide **copy buttons on each code block** in addition to the whole-message copy control
+- Code-block copy should copy exactly the contents of that block (without extra prompt/metadata text)
+
+#### File and Image Upload
+
+- Add support for **file/image upload** directly from the chat interface
+- Uploaded files should, at a minimum, be available to the backend as attachments for the current session (e.g., for ad‑hoc inspection or future indexing)
+- For now, uploading **PDFs** or other supported document types does not need to automatically trigger indexing, but the architecture should allow this in a later phase
 
 #### Memory Configuration
 

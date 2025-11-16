@@ -1,6 +1,6 @@
 """Chat API endpoints."""
 
-from fastapi import APIRouter, HTTPException, Request, Query
+from fastapi import APIRouter, HTTPException, Request, Query, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 import json
 
@@ -104,7 +104,13 @@ async def chat(request: Request, chat_request: ChatRequest):
 
 
 @router.post("/chat/stream")
-async def chat_stream(request: Request, chat_request: ChatRequest):
+async def chat_stream(
+    request: Request,
+    message: str = Form(..., description="User message to send to the AI agent"),
+    session_id: str | None = Form(None, description="Existing session ID to continue"),
+    paper_id: str | None = Form(None, description="Optional paper ID to scope retrieval"),
+    files: list[UploadFile] | None = File(None, description="Optional uploaded files (images/docs)")
+):
     """
     Send a message to the AI agent and get a streaming response.
 
@@ -117,10 +123,9 @@ async def chat_stream(request: Request, chat_request: ChatRequest):
     app_state = request.app.state.app_state
 
     # Create or validate session
-    if chat_request.session_id:
-        if not app_state.conversation_manager.session_exists(chat_request.session_id):
+    if session_id:
+        if not app_state.conversation_manager.session_exists(session_id):
             raise HTTPException(status_code=404, detail="Session not found")
-        session_id = chat_request.session_id
     else:
         session_id = app_state.conversation_manager.create_session()
 
@@ -128,7 +133,7 @@ async def chat_stream(request: Request, chat_request: ChatRequest):
     app_state.conversation_manager.add_message(
         session_id=session_id,
         role=MessageRole.USER,
-        content=chat_request.message,
+        content=message,
     )
 
     # Get conversation history
@@ -152,11 +157,11 @@ async def chat_stream(request: Request, chat_request: ChatRequest):
             logger.info(f"Passing {len(history[:-1])} messages to AI agent (excluding current user message)")
 
             # If visualization requested and enabled, stream an image event first
-            if request.app.state.settings.image.enabled and app_state.ai_agent.is_visualization_request(chat_request.message):
+            if request.app.state.settings.image.enabled and app_state.ai_agent.is_visualization_request(message):
                 prompt_img, source_papers = app_state.ai_agent._build_image_prompt(
-                    query=chat_request.message,
+                    query=message,
                     conversation_history=history[:-1],
-                    paper_id=getattr(chat_request, 'paper_id', None),
+                    paper_id=paper_id,
                 )
                 mime = request.app.state.settings.image.mime_type
                 width = request.app.state.settings.image.width
@@ -187,9 +192,9 @@ async def chat_stream(request: Request, chat_request: ChatRequest):
 
             # Orchestrate and execute retrieval to build prompt, then stream model output
             prompt, source_papers = app_state.ai_agent.build_prompt_with_orchestration(
-                query=chat_request.message,
+                query=message,
                 conversation_history=history[:-1],
-                paper_id=chat_request.paper_id,
+                paper_id=paper_id,
             )
 
             # Stream model output
