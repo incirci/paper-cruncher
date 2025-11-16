@@ -20,6 +20,10 @@ class PaperMetadata(BaseModel):
 
     id: str
     filename: str
+    # Canonical title used everywhere (sidebar, mindmap, vector DB, etc.)
+    # Format: "<actual_file_name> (<inferred_name_if_different_from_file_name>)"
+    # Example: "dib-0004-0059.pdf (Detection of Physical Strain and Fatigue...)"
+    canonical_title: str = ""
     filepath: str
     page_count: int
     file_size: int

@@ -463,12 +463,16 @@
                     return;
                 }
                 
-                papersList.innerHTML = data.papers.map(paper => `
+                papersList.innerHTML = data.papers.map(paper => {
+                    const displayName = paper.canonical_title && paper.canonical_title.trim()
+                        ? paper.canonical_title
+                        : paper.filename;
+                    return `
                     <div class="paper-item" data-paper-id="${paper.id}" onclick="selectPaper('${paper.id}')">
-                        <div class="paper-name">${paper.filename}</div>
+                        <div class="paper-name">${displayName}</div>
                         <div class="paper-meta">${paper.page_count} pages</div>
                     </div>
-                `).join('');
+                `;}).join('');
             } catch (error) {
                 console.error('Error loading papers:', error);
                 papersList.innerHTML = '<div class="empty-state">Error loading papers</div>';

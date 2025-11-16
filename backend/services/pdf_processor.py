@@ -6,7 +6,9 @@ from pathlib import Path
 from typing import List, Optional
 
 import fitz  # PyMuPDF
+import google.generativeai as genai
 
+from backend.core.config import settings
 from backend.models.schemas import PaperMetadata, PaperChunk
 
 
@@ -15,7 +17,92 @@ class PDFProcessor:
 
     def __init__(self):
         """Initialize PDF processor."""
-        pass
+        # Configure the LLM lazily; this is cheap and reused across calls.
+        if settings.google_api_key:
+            genai.configure(api_key=settings.google_api_key)
+            model_name = getattr(settings.agent, "orchestrator_model", None) or settings.agent.model
+            self._title_model = genai.GenerativeModel(
+                model_name=model_name,
+                generation_config={
+                    "temperature": 0.0,
+                    "max_output_tokens": 64,
+                },
+            )
+        else:
+            self._title_model = None
+
+    def _infer_title_with_ai(self, text: str) -> str:
+        """Use an LLM to infer the paper title from early text.
+
+        Returns an empty string if inference is not possible or disabled.
+        """
+        if not self._title_model:
+            return ""
+
+        snippet = (text or "").strip()
+        if not snippet:
+            return ""
+
+        # Limit to first ~400 characters to keep prompt small
+        snippet = snippet[:400]
+
+        prompt = (
+            "You are given the beginning of a PDF research paper. "
+            "From this fragment, extract the exact paper title if you can. "
+            "If you are not confident, return an empty string. "
+            "Respond with ONLY the title text, no quotes or commentary.\n\n"
+            f"Text: {snippet}"
+        )
+
+        try:
+            response = self._title_model.generate_content(prompt)
+            raw = (getattr(response, "text", "") or "").strip()
+        except Exception:
+            return ""
+
+        # Basic sanity checks: non-trivial, contains letters, reasonable length
+        if not raw or len(raw) < 5 or len(raw) > 200:
+            return ""
+        if not any(c.isalpha() for c in raw):
+            return ""
+        # Normalize whitespace to keep titles single-line and tidy
+        return " ".join(raw.split())
+
+    def _build_canonical_title(self, filename: str, inferred_title: str) -> str:
+        """Decide how to combine filename and inferred title.
+
+        If the filename already mostly matches the inferred title (ignoring
+        extension, case, and minor token differences), we just return the
+        filename. Otherwise we return "<filename> (<inferred_title>)".
+        """
+        if not inferred_title:
+            return filename
+
+        # Strip extension from filename for comparison
+        base = filename.rsplit(".", 1)[0]
+
+        def normalize(s: str) -> list[str]:
+            s = s.lower()
+            for ch in "-_.,()[]":
+                s = s.replace(ch, " ")
+            tokens = [t for t in s.split() if t]
+            return tokens
+
+        f_tokens = normalize(base)
+        t_tokens = normalize(inferred_title)
+
+        if not f_tokens or not t_tokens:
+            return f"{filename} ({inferred_title})"
+
+        # Compute overlap ratio: how many filename tokens appear in title tokens
+        overlap = sum(1 for tok in f_tokens if tok in t_tokens)
+        overlap_ratio = overlap / len(f_tokens)
+
+        # If filename and inferred title are already very similar, just use filename
+        if overlap_ratio >= 0.7:
+            return filename
+
+        return f"{filename} ({inferred_title})"
 
     def extract_metadata(self, pdf_path: Path) -> PaperMetadata:
         """Extract metadata from a PDF file."""
@@ -30,13 +117,33 @@ class PDFProcessor:
         file_size = stat.st_size
         created_at = datetime.fromtimestamp(stat.st_ctime)
 
-        # Open PDF to get page count
+        # Open PDF to get page count and text snippet for title inference
         with fitz.open(pdf_path) as doc:
             page_count = len(doc)
 
+            # Start with any embedded document title
+            doc_title = (doc.metadata or {}).get("title") or ""
+
+            # Fallback snippet: first page text
+            first_page_text = ""
+            try:
+                first_page_text = (doc[0].get_text() or "").strip()
+            except Exception:
+                first_page_text = ""
+
+        # Use AI plus PDF metadata to infer a human-readable title
+        inferred_title = doc_title.strip()
+        if not inferred_title:
+            inferred_title = self._infer_title_with_ai(first_page_text)
+
+        # Build canonical title using heuristic to avoid redundant duplication
+        filename = pdf_path.name
+        canonical_title = self._build_canonical_title(filename, inferred_title)
+
         return PaperMetadata(
             id=paper_id,
-            filename=pdf_path.name,
+            filename=filename,
+            canonical_title=canonical_title,
             filepath=str(pdf_path),
             page_count=page_count,
             file_size=file_size,

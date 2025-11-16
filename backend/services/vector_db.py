@@ -52,6 +52,7 @@ class VectorDBService:
             {
                 "paper_id": chunk.paper_id,
                 "paper_filename": paper_metadata.filename,
+                "paper_title": getattr(paper_metadata, "canonical_title", paper_metadata.filename),
                 "chunk_index": chunk.chunk_index,
                 "page_number": chunk.page_number or 0,
             }
@@ -150,7 +151,7 @@ class VectorDBService:
         Get list of all unique papers in the database.
 
         Returns:
-            List of dictionaries with paper_id and paper_filename
+            List of dictionaries with paper_id, paper_filename and paper_title
         """
         # Get all metadata
         results = self.collection.get()
@@ -161,17 +162,28 @@ class VectorDBService:
             for metadata in results["metadatas"]:
                 paper_id = metadata.get("paper_id")
                 paper_filename = metadata.get("paper_filename")
+                paper_title = metadata.get("paper_title") or paper_filename
                 if paper_id and paper_filename:
-                    papers[paper_id] = paper_filename
-        
-        return [{"paper_id": pid, "paper_filename": fname} for pid, fname in papers.items()]
+                    papers[paper_id] = {
+                        "paper_filename": paper_filename,
+                        "paper_title": paper_title,
+                    }
+
+        return [
+            {
+                "paper_id": pid,
+                "paper_filename": data["paper_filename"],
+                "paper_title": data["paper_title"],
+            }
+            for pid, data in papers.items()
+        ]
 
     def get_paper_summaries(self) -> List[dict]:
         """
         Get lightweight summaries of all papers (first chunk only - usually contains title/abstract).
 
         Returns:
-            List of dictionaries with paper_id, filename, and summary content
+            List of dictionaries with paper_id, filename, canonical title, and summary content
         """
         papers = self.get_all_papers()
         summaries = []
@@ -193,7 +205,8 @@ class VectorDBService:
                 summaries.append({
                     "paper_id": paper["paper_id"],
                     "paper_filename": paper["paper_filename"],
-                    "summary": results["documents"][0][:500]  # First 500 chars
+                    "paper_title": paper.get("paper_title", paper["paper_filename"]),
+                    "summary": results["documents"][0][:500],  # First 500 chars
                 })
             else:
                 # Fallback: get any chunk from this paper
@@ -205,14 +218,16 @@ class VectorDBService:
                     summaries.append({
                         "paper_id": paper["paper_id"],
                         "paper_filename": paper["paper_filename"],
-                        "summary": results["documents"][0][:500]
+                        "paper_title": paper.get("paper_title", paper["paper_filename"]),
+                        "summary": results["documents"][0][:500],
                     })
                 else:
                     # Last fallback: just the filename
                     summaries.append({
                         "paper_id": paper["paper_id"],
                         "paper_filename": paper["paper_filename"],
-                        "summary": paper["paper_filename"]
+                        "paper_title": paper.get("paper_title", paper["paper_filename"]),
+                        "summary": paper["paper_title"],
                     })
         
         return summaries

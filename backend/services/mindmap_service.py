@@ -38,10 +38,11 @@ class MindmapService:
         """Build prompt to extract a hierarchical knowledge tree as JSON (NotebookLM-style)."""
         items = []
         for s in summaries:
-            filename = s.get('paper_filename', '')
-            raw_summary = s.get('summary', '') or ''
+            # Always use the canonical title string ("<filename> (<inferred_title>)")
+            title = s.get("paper_title") or s.get("paper_filename", "")
+            raw_summary = s.get("summary", "") or ""
             cleaned_summary = raw_summary[:400].replace("\n", " ")
-            items.append(f"- {filename}: {cleaned_summary}")
+            items.append(f"- {title}: {cleaned_summary}")
         papers_block = "\n".join(items)
 
         # Get configuration values
@@ -72,7 +73,7 @@ class MindmapService:
             '        {\n'
             '          "name": "Subtheme",\n'
             '          "children": [\n'
-            '            {"name": "Paper Title from the allowed list"}\n'
+            '            {"name": "Paper canonical title from the allowed list"}\n'
             '          ]\n'
             '        }\n'
             '      ]\n'
@@ -80,7 +81,7 @@ class MindmapService:
             '  ]\n'
             "}\n\n"
             "Constraints (must follow all):\n"
-            "- Use ONLY paper titles from the provided list; NEVER invent papers.\n"
+            "- Use ONLY the provided paper canonical titles from the list; NEVER invent or alter titles. Canonical titles are of the exact form '<filename> (<inferred_title_if_present>)'.\n"
             "- Papers must appear ONLY as leaf nodes (no children under a paper node).\n"
             f"- Create {min_themes}–{max_themes} top-level themes.\n"
             f"- Depth requirement: {depth_guidance}\n"
@@ -132,26 +133,26 @@ class MindmapService:
         # Load the global tree
         global_tree = self.load_graph()
         
-        # Get paper filename from paper_id
+        # Get paper canonical title (or filename) from paper_id
         summaries = self._summaries()
-        paper_filename = None
+        paper_name = None
         for s in summaries:
-            if s.get('paper_id') == paper_id:
-                paper_filename = s['paper_filename']
+            if s.get("paper_id") == paper_id:
+                paper_name = s.get("paper_title") or s.get("paper_filename")
                 break
-        
-        if not paper_filename:
+
+        if not paper_name:
             return {"name": "Paper Not Found", "children": []}
-        
+
         # Search for all occurrences of this paper in the tree and collect parent topics
         topics = []
-        self._find_paper_topics(global_tree, paper_filename, [], topics)
-        
+        self._find_paper_topics(global_tree, paper_name, [], topics)
+
         if not topics:
-            return {"name": paper_filename, "children": []}
-        
+            return {"name": paper_name, "children": []}
+
         # Build a tree with paper as root and collected topics as children
-        return {"name": paper_filename, "children": topics}
+        return {"name": paper_name, "children": topics}
     
     def _find_paper_topics(self, node: Dict[str, Any], paper_name: str, path: List[str], result: List[Dict[str, Any]]) -> None:
         """Recursively find all paths leading to a specific paper."""

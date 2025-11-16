@@ -367,17 +367,33 @@ async def serve_mindmap_page():
         }
         
         function expandAll() {
-          if (root) {
-            expand(root);
-            update(root);
+          if (!root) return;
+
+          function expandRecursive(node) {
+            if (node._children) {
+              node.children = node._children;
+              node._children = null;
+            }
+            (node.children || []).forEach(expandRecursive);
           }
+
+          expandRecursive(root);
+          update(root);
         }
-        
+
         function collapseAll() {
-          if (root && root.children) {
-            root.children.forEach(collapse);
-            update(root);
+          if (!root) return;
+
+          function collapseRecursive(node) {
+            if (node.children) {
+              node._children = node.children;
+              node.children = null;
+            }
+            (node._children || []).forEach(collapseRecursive);
           }
+
+          collapseRecursive(root);
+          update(root);
         }
         
         document.getElementById('refreshBtn').addEventListener('click', loadTree);

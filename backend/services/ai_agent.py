@@ -361,7 +361,15 @@ For PAPERS, use: ALL or specific filenames separated by commas
                 continue
             
             all_papers = self.vector_db.get_all_papers()
-            paper_id_map = {p['paper_filename']: p['paper_id'] for p in all_papers}
+            # Use canonical title for coordination, but keep filename mapping for backwards compatibility
+            paper_id_map = {}
+            for p in all_papers:
+                filename = p.get('paper_filename')
+                title = p.get('paper_title') or filename
+                if filename:
+                    paper_id_map[filename] = p['paper_id']
+                if title:
+                    paper_id_map[title] = p['paper_id']
             paper_ids = [paper_id_map[fname] for fname in papers if fname in paper_id_map]
             
             if not paper_ids:
