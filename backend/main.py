@@ -196,12 +196,13 @@ async def serve_mindmap_page():
             // Check for paper_id query parameter
             const urlParams = new URLSearchParams(window.location.search);
             const paperId = urlParams.get('paper_id');
+            const query = urlParams.get('query');
             
-            // Build API URL with optional paper_id
-            let apiUrl = '/api/mindmap';
-            if (paperId) {
-              apiUrl += `?paper_id=${encodeURIComponent(paperId)}`;
-            }
+            // Build API URL with optional paper_id and custom query
+            const apiParams = new URLSearchParams();
+            if (paperId) apiParams.set('paper_id', paperId);
+            if (query) apiParams.set('query', query);
+            const apiUrl = apiParams.toString() ? `/api/mindmap?${apiParams.toString()}` : '/api/mindmap';
             
             const res = await fetch(apiUrl);
             const data = await res.json();

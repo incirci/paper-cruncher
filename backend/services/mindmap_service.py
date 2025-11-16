@@ -34,8 +34,13 @@ class MindmapService:
             },
         )
 
-    def build_prompt(self, summaries: List[Dict[str, Any]]) -> str:
-        """Build prompt to extract a hierarchical knowledge tree as JSON (NotebookLM-style)."""
+    def build_prompt(self, summaries: List[Dict[str, Any]], custom_query: Optional[str] = None) -> str:
+        """Build prompt to extract a hierarchical knowledge tree as JSON (NotebookLM-style).
+
+        If custom_query is provided, it is appended as additional user
+        instructions that may influence how the hierarchy is organized,
+        while all structural constraints still apply.
+        """
         items = []
         for s in summaries:
             # Always use the canonical title string ("<filename> (<inferred_title>)")
@@ -59,7 +64,7 @@ class MindmapService:
         else:  # max_depth >= 5
             depth_guidance = "Create a detailed, deep hierarchy with 4-5 levels: use multiple nested subtopic layers (Theme > Major Subtopic > Minor Subtopic > Specific Area > Paper) to organize papers granularly."
 
-        return (
+        base_prompt = (
             "You are an information architect. From the papers and summaries below, "
             "produce a hierarchical knowledge tree (NotebookLM-style) organized by nested topics and subtopics.\n\n"
             "Focus on *conceptual content* rather than document structure or publication type. "
@@ -97,6 +102,15 @@ class MindmapService:
             "- Output ONLY JSON. No markdown, no commentary, no code fences.\n"
         )
 
+        if custom_query:
+            custom_block = (
+                "\n\nCustom user instructions for structuring the mindmap (must still obey ALL constraints above):\n"
+                f"{custom_query}\n"
+            )
+            return base_prompt + custom_block
+
+        return base_prompt
+
     def _safe_parse_json(self, text: str) -> Dict[str, Any]:
         """Extract and parse the first JSON object from text."""
         start = text.find("{")
@@ -117,13 +131,17 @@ class MindmapService:
         except Exception:
             return []
 
-    def generate_graph(self) -> Dict[str, Any]:
-        """Generate a hierarchical knowledge tree from current papers using the LLM."""
+    def generate_graph(self, custom_query: Optional[str] = None) -> Dict[str, Any]:
+        """Generate a hierarchical knowledge tree from current papers using the LLM.
+
+        If custom_query is provided, the generated tree is influenced by the
+        additional instructions but still obeys all structural constraints.
+        """
         summaries = self._summaries()
         if not summaries:
             return {"name": "Research Topics", "children": []}
 
-        prompt = self.build_prompt(summaries)
+        prompt = self.build_prompt(summaries, custom_query=custom_query)
         response = self.model.generate_content(prompt)
         tree = self._safe_parse_json(response.text or "")
 
@@ -218,7 +236,12 @@ class MindmapService:
             # Strip some trivial punctuation at the ends
             return simplified.strip(".:-")
 
-        def process_node(node: Dict[str, Any]) -> Dict[str, Any]:
+        def process_node(node: Any) -> Dict[str, Any]:
+            # Be defensive: if the model returns a bare string or other
+            # primitive instead of an object, wrap it as a leaf node.
+            if not isinstance(node, dict):
+                return {"name": str(node), "children": []}
+
             children = node.get("children") or []
             if not children:
                 # Leaf (typically a paper) – do not touch

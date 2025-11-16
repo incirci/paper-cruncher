@@ -79,6 +79,18 @@ Add an AI-generated hierarchical knowledge structure to organize topics and pape
 - [x] Backend: Tighten `MindmapService.build_prompt` to focus internal node names on conceptual content and avoid generic section/review labels
 - [x] Backend: Add post-processing (`_normalize_and_deduplicate`) to merge duplicate internal concept nodes while preserving paper leaves
 
+### Custom Mindmaps (User-Defined Instructions)
+
+Add support for user-editable mindmap instructions ("mindmap query") to generate alternative tree structures without changing the core architecture.
+
+Planned tasks:
+
+- [ ] API: Extend `GET /api/mindmap` to accept an optional `query` parameter that carries user-provided mindmap instructions.
+- [ ] Service: Update `MindmapService.generate_graph` / `build_prompt` to accept an optional custom query and include it in the LLM prompt while preserving all structural constraints.
+- [ ] Persistence rules: Only persist the default (no custom query) global mindmap to `data/mindmap/graph.json`; treat custom mindmaps as ephemeral responses.
+- [ ] Frontend (sidebar): Add an edit icon near the "View Mindmap" button that opens a small textarea/modal with the default mindmap instructions, scoped to either all papers or the selected paper.
+- [ ] Frontend (mindmap page): Read both `paper_id` and `query` from URL parameters and forward them to `/api/mindmap` when loading the tree.
+
 ## Remaining Optional Enhancements
 
 ### Testing (Phase 5)

@@ -39,7 +39,7 @@ max_chunks_per_query = 10  # Increased from 5 for better coverage
 
 [mindmap]
 # Control the depth and breadth of the generated knowledge graph
-max_depth = 5  # Maximum tree depth (Root > Theme > Subtheme > Paper)
+max_depth = 6  # Maximum tree depth (Root > Theme > Subtheme > Paper)
 min_themes = 3  # Minimum number of top-level themes
 max_themes = 7  # Maximum number of top-level themes
 node_name_max_length = 60  # Maximum characters for node names

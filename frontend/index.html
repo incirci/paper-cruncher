@@ -344,9 +344,14 @@
             <button class="index-button" id="indexButton" onclick="indexPapers()">
                 📚 Index Papers
             </button>
-            <button class="index-button secondary" id="mindmapButton" onclick="openMindmap()">
-                🧠 View Mindmap
-            </button>
+            <div style="display: flex; gap: 8px; width: 100%;">
+                <button class="index-button secondary" id="mindmapButton" onclick="openMindmap()" style="flex: 1;">
+                    🧠 View Mindmap
+                </button>
+                <button class="index-button secondary" id="mindmapQueryButton" onclick="editMindmapQuery()" title="Edit mindmap instructions" style="width: 40px; padding: 0; display: flex; align-items: center; justify-content: center;">
+                    ✏️
+                </button>
+            </div>
         </div>
         <div class="papers-list" id="papersList">
             <div class="empty-state">Click "Index Papers" to load papers from the papers folder</div>
@@ -382,6 +387,7 @@
         let isLoading = false;
         let isIndexing = false;
         let selectedPaperId = null; // Track selected paper ID
+        let mindmapQuery = '';
 
         // Load papers on startup if they were already indexed
         loadPapers();
@@ -445,7 +451,26 @@
             if (selectedPaperId) {
                 url += `?paper_id=${selectedPaperId}`;
             }
+            if (mindmapQuery && mindmapQuery.trim()) {
+                const qs = new URLSearchParams();
+                qs.set('query', mindmapQuery.trim());
+                url += selectedPaperId ? `&${qs.toString()}` : `?${qs.toString()}`;
+            }
             window.open(url, '_blank');
+        }
+
+        function editMindmapQuery() {
+            const baseDefault = 'Organize the content into meaningful themes and subtopics.';
+            const scopedDefault = 'Organize this paper\'s content into its main topics and subtopics.';
+            const currentDefault = selectedPaperId ? scopedDefault : baseDefault;
+
+            const existing = mindmapQuery && mindmapQuery.trim() ? mindmapQuery : currentDefault;
+            const updated = window.prompt('Mindmap instructions (optional):', existing);
+            if (updated === null) {
+                return; // user cancelled
+            }
+            const trimmed = updated.trim();
+            mindmapQuery = trimmed;
         }
 
         async function loadPapers() {

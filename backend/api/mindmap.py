@@ -9,7 +9,8 @@ router = APIRouter()
 @router.get("/mindmap")
 async def get_mindmap_data(
     request: Request,
-    paper_id: Optional[str] = Query(None, description="Optional paper ID to scope mindmap to specific paper")
+    paper_id: Optional[str] = Query(None, description="Optional paper ID to scope mindmap to specific paper"),
+    query: Optional[str] = Query(None, description="Optional custom instructions for structuring the mindmap"),
 ):
     """Return the knowledge graph JSON for the mindmap visualization.
     
@@ -19,10 +20,14 @@ async def get_mindmap_data(
     app_state = request.app.state.app_state
     
     if paper_id:
-        # Generate paper-specific tree
+        # Generate paper-specific tree (custom_query currently not applied;
+        # tree is derived from the persisted global mindmap).
         graph = app_state.mindmap_service.generate_paper_tree(paper_id)
+    elif query:
+        # Custom global mindmap based on user instructions (ephemeral; not persisted)
+        graph = app_state.mindmap_service.generate_graph(custom_query=query)
     else:
-        # Load global tree
+        # Load global tree (default persisted mindmap)
         graph = app_state.mindmap_service.load_graph()
     
     return graph

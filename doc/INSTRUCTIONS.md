@@ -131,6 +131,8 @@ After indexing, automatically build a concise knowledge graph representing:
 - Relationships between topics and between papers
 - Cross-paper connections (e.g., shared methods, datasets, findings)
 - **Paper-specific hierarchy**: When a paper is selected, generate a paper-scoped mindmap with that paper as root
+  
+In addition to the default automatically generated structures, the user can override the mindmap behavior with **custom mindmap instructions** (a free-text query describing how the tree should be organized). This enables alternative views such as focusing on specific aspects, clustering criteria, or shallow vs. deep hierarchies.
 
 ### Behavior
 
@@ -182,6 +184,7 @@ Internally, the pipeline is:
 - **Context-aware rendering**:
   - If a paper is selected: show paper-scoped mindmap (paper as root, with its topics/subtopics)
   - If no paper selected: show global cross-paper mindmap
+    - If a custom mindmap query is provided by the user, use it to influence how the hierarchy is organized while still respecting all structural constraints (valid JSON, canonical titles as leaf nodes, depth limits).
 - The UI loads hierarchical data from `GET /api/mindmap?paper_id=<id>` (optional param for paper-scoped view) in nested JSON format:
 
   ```json
