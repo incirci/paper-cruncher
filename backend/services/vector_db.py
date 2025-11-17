@@ -194,19 +194,63 @@ class VectorDBService:
         summaries: List[dict] = []
 
         # Simple, domain-agnostic keywords that often signal substantive content
+        # and concept-dense descriptions (phenomena, variables, tasks, datasets,
+        # equipment, methods, conclusions). Keep this lightweight and heuristic.
         strong_keywords = [
+            # Problem / phenomenon / task
+            "we investigate",
+            "we study",
+            "we analyze",
+            "we examine",
+            "our objective",
+            "the goal of this",
+            "the aim of this",
+
+            # Methods / models / methodology
             "we propose",
             "we present",
             "we develop",
+            "we introduce",
             "our method",
             "our approach",
-            "this work",
-            "this study",
+            "our model",
+            "our framework",
+            "methodology",
+            "experimental setup",
+            "protocol",
+            "pipeline",
+
+            # Data / variables / equipment (domain-agnostic)
+            "dataset",
+            "variables",
+            "indicator",
+            "test",
+            "measurements",
+            "signals",
+            "recordings",
+            "method", 
+            "methodology",
+            "apparatus",
+            "equipment",
+
+            # Results / conclusions
             "we show",
             "we demonstrate",
-            "results show",
+            "we find",
             "our results",
+            "results show",
+            "our findings",
+            "the results indicate",
+            "we conclude",
+            "we conclude that",
+            "in conclusion",
+            "these findings",
+
+            # Generic but still contribution-focused phrases
+            "this work",
+            "this study",
             "in this study",
+            "in this paper we",
         ]
 
         def score_chunk(text: str, index: int, total: int) -> float:
@@ -222,7 +266,7 @@ class VectorDBService:
                 if kw in t:
                     score += 3.0
 
-            # Light preference for chunks with multiple sentences
+            # Light preference for chunks with multiple sentences (richer content)
             sentence_separators = t.count(".") + t.count("!") + t.count("?")
             if sentence_separators > 1:
                 score += 1.0
@@ -234,6 +278,25 @@ class VectorDBService:
                 score += 1.0
             elif index == total // 2:
                 score += 1.0
+
+            # Small penalty for very narrative / structural chunks dominated by
+            # section-like language; we still allow them but make them less likely
+            # to be selected when more concept-dense chunks exist.
+            structural_tokens = [
+                "introduction",
+                "background",
+                "related work",
+                "literature review",
+                "organization of this paper",
+                "in this section",
+                "in the next section",
+                "the rest of this paper",
+                "section",
+                "chapter",
+            ]
+            for st in structural_tokens:
+                if st in t:
+                    score -= 0.8
 
             return score
 
@@ -271,7 +334,10 @@ class VectorDBService:
             if not selected_texts:
                 return ""
 
-            # Join into a single paragraph and trim to a reasonable length
+            # Join into a single paragraph and trim to a reasonable length.
+            # This is intentionally concept-dense: we keep the most informative
+            # parts about phenomena, variables, tasks, datasets, equipment,
+            # methodology, and conclusions rather than narrative structure.
             paragraph = " ".join(selected_texts)
             return paragraph[:1200]
 

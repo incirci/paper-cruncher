@@ -68,7 +68,7 @@ class MindmapService:
             "You are an information architect. From the papers and summaries below, "
             "produce a hierarchical knowledge tree (NotebookLM-style) organized by nested topics and subtopics.\n\n"
             "Focus on *conceptual content* rather than document structure or publication type. "
-            "Internal node names should capture the key ideas, phenomena, approaches, and contexts described in the papers, "
+            "Internal node names should capture the key ideas, phenomena, variables, tasks, datasets, methods, equipment, tools, and contexts described in the papers, "
             "not generic labels.\n\n"
             f"PAPERS (only these are allowed):\n{papers_block}\n\n"
             "Output STRICTLY valid JSON (no markdown, no backticks, no explanation). Use exactly this recursive structure:\n"
@@ -97,14 +97,14 @@ class MindmapService:
             "- A paper may appear under multiple branches if truly relevant, but NEVER duplicate a paper under the same branch.\n"
             f"- Keep node names concise ( {max_node_length} characters), descriptive, and ASCII-safe.\n"
             "- Do NOT use generic structural or publication-type labels as node names (for example: 'Introduction', 'Methods', 'Results', 'Discussion', 'Conclusion', 'Overview', 'Review', 'State of the Art', 'Literature Review').\n"
-            "- Internal node names should summarize what is being studied or addressed and, where applicable, how or in what context (e.g., combining phenomenon, signals/inputs, approaches, or settings), without mentioning that it is a section or a review.\n"
+            "- Internal node names should summarize what is being studied or addressed and, where applicable, how or in what context (for example, combining a phenomenon or task, relevant variables or inputs, data or datasets, methods, equipment or tools, or settings), without mentioning that it is a section or a review.\n"
             "- Sort children alphabetically by 'name' at every level for determinism.\n"
             "- Output ONLY JSON. No markdown, no commentary, no code fences.\n"
         )
 
         if custom_query:
             custom_block = (
-                "\n\nCustom user instructions for structuring the mindmap (must still obey ALL constraints above):\n"
+                "\n\nCustom user instructions for structuring the mindmap (must still obey ALL constraints above except for the root node name which can be overruled by the custom instruction):\n"
                 f"{custom_query}\n"
             )
             return base_prompt + custom_block
