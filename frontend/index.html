@@ -32,6 +32,109 @@
             margin-left: -300px;
         }
 
+        .sessions-sidebar {
+            width: 280px;
+            background: white;
+            border-right: 1px solid #e0e0e0;
+            display: flex;
+            flex-direction: column;
+            transition: margin-left 0.3s;
+        }
+
+        .sessions-sidebar.collapsed {
+            margin-left: -280px;
+        }
+
+        .sessions-header {
+            padding: 16px;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .sessions-header h3 {
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .sessions-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+        }
+
+        .session-item {
+            padding: 12px;
+            margin-bottom: 6px;
+            background: #f9f9f9;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.2s;
+            border: 2px solid transparent;
+        }
+
+        .session-item:hover {
+            background: #f0f0f0;
+        }
+
+        .session-item.active {
+            background: #e3f2fd;
+            border-color: #007bff;
+        }
+
+        .session-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 4px;
+        }
+
+        .session-id-label {
+            font-size: 11px;
+            font-family: 'Courier New', monospace;
+            color: #666;
+        }
+
+        .session-delete-btn {
+            background: transparent;
+            border: none;
+            color: #b00020;
+            cursor: pointer;
+            font-size: 16px;
+            padding: 0 4px;
+            line-height: 1;
+        }
+
+        .session-delete-btn:hover {
+            color: #8b0000;
+        }
+
+        .session-meta {
+            font-size: 11px;
+            color: #999;
+            margin-top: 4px;
+        }
+
+        .new-session-btn {
+            width: 100%;
+            padding: 10px;
+            margin: 8px;
+            margin-top: 0;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        .new-session-btn:hover {
+            background: #0056b3;
+        }
+
         .sidebar-header {
             padding: 20px;
             border-bottom: 1px solid #e0e0e0;
@@ -444,6 +547,17 @@
     </style>
 </head>
 <body>
+    <div class="sessions-sidebar" id="sessionsSidebar">
+        <div class="sessions-header">
+            <h3>💬 Sessions</h3>
+            <button class="toggle-sidebar" style="padding: 4px 8px; font-size: 12px;" onclick="toggleSessionsSidebar()">✕</button>
+        </div>
+        <button class="new-session-btn" onclick="newSession()">＋ New Session</button>
+        <div class="sessions-list" id="sessionsList">
+            <div class="empty-state" style="padding: 20px; text-align: center; color: #999; font-size: 13px;">No saved sessions</div>
+        </div>
+    </div>
+    
     <div class="sidebar" id="sidebar">
         <div class="sidebar-header">
             <div class="sidebar-title-row">
@@ -476,12 +590,12 @@
 
     <div class="main-content">
         <div class="header">
-            <button class="toggle-sidebar" onclick="toggleSidebar()">☰ Toggle Sidebar</button>
+            <div style="display: flex; gap: 12px; align-items: center;">
+                <button class="toggle-sidebar" onclick="toggleSessionsSidebar()">💬 Sessions</button>
+                <button class="toggle-sidebar" onclick="toggleSidebar()">☰ Papers</button>
+            </div>
             <div class="stats">
                 <button class="toggle-sidebar" style="margin-right: 12px;" onclick="clearChat()">🧹 Clear Chat</button>
-                <button class="toggle-sidebar" style="margin-right: 12px;" onclick="newSession()">＋ New Session</button>
-                <button class="toggle-sidebar" style="margin-right: 12px;" onclick="deleteSession()">🗑 Delete Session</button>
-                <button class="toggle-sidebar" style="margin-right: 12px;" onclick="showSessions()">📂 Sessions</button>
                 <button class="danger-button" style="margin-right: 12px;" onclick="resetAllData()">⚠ Reset All Data</button>
                 <span id="activeSessionLabel" style="margin-right: 12px; color: #555;">Session: –</span>
                 <span id="tokenStats">Tokens: 0</span>
@@ -565,6 +679,17 @@
 
         function toggleSidebar() {
             document.getElementById('sidebar').classList.toggle('collapsed');
+        }
+
+        function toggleSessionsSidebar() {
+            const sidebar = document.getElementById('sessionsSidebar');
+            const wasCollapsed = sidebar.classList.contains('collapsed');
+            sidebar.classList.toggle('collapsed');
+            
+            // Load sessions when opening
+            if (wasCollapsed) {
+                loadSessionsList();
+            }
         }
 
         function triggerPaperUpload() {
@@ -655,13 +780,14 @@
             let url = '/mindmap';
             const qs = new URLSearchParams();
 
+            // Always pass session_id to scope mindmap to current session's papers
+            if (sessionId) {
+                qs.set('session_id', sessionId);
+            }
+
+            // If a specific paper is selected, also pass paper_id for single-paper view
             if (selectedPaperId) {
                 qs.set('paper_id', selectedPaperId);
-            } else if (sessionId) {
-                // When no specific paper is selected, scope the mindmap
-                // to the current chat session's paper_ids so each
-                // window/session sees its own subset of papers.
-                qs.set('session_id', sessionId);
             }
 
             // Always pass an explicit query so the backend uses the
@@ -856,6 +982,14 @@
                             await saveSessionContext();
                             return;
                         }
+                        if (data.type === 'session_created') {
+                            // Backend created a new session - refresh sessions sidebar
+                            const sessionsSidebar = document.getElementById('sessionsSidebar');
+                            if (sessionsSidebar && !sessionsSidebar.classList.contains('collapsed')) {
+                                await loadSessionsList();
+                            }
+                            return;
+                        }
                         if (data.type === 'image') {
                             // Render generated image inline
                             const img = document.createElement('img');
@@ -896,6 +1030,7 @@
 
                             // Ensure latest paper context is persisted with the session
                             await saveSessionContext();
+                            
                             es.close();
                             // Remove streaming IDs
                             messageDiv.removeAttribute('id');
@@ -1095,29 +1230,81 @@
         }
 
         async function showSessions() {
+            // Deprecated - now using sidebar
+            toggleSessionsSidebar();
+        }
+
+        async function loadSessionsList() {
             try {
                 const url = `${API_URL}/chat/sessions`;
                 const res = await fetch(url);
                 const data = await res.json();
                 const sessions = data.sessions || [];
+                
+                const sessionsList = document.getElementById('sessionsList');
+                
                 if (!sessions.length) {
-                    alert('No saved sessions found.');
+                    sessionsList.innerHTML = '<div class="empty-state" style="padding: 20px; text-align: center; color: #999; font-size: 13px;">No saved sessions</div>';
                     return;
                 }
 
-                const options = sessions
-                    .map((s, idx) => `${idx + 1}. ${s.session_id.slice(0, 8)}…  tokens=${s.total_tokens}`)
-                    .join('\n');
-                const input = window.prompt(`Select a session to load:\n${options}\n\nEnter number:`, '1');
-                if (!input) return;
-                const index = parseInt(input, 10) - 1;
-                if (Number.isNaN(index) || index < 0 || index >= sessions.length) return;
-
-                const chosen = sessions[index];
-                await loadSession(chosen.session_id);
+                sessionsList.innerHTML = sessions.map(s => {
+                    const isActive = s.session_id === sessionId;
+                    const shortId = s.session_id.slice(0, 8);
+                    const date = new Date(s.updated_at);
+                    const timeStr = date.toLocaleString('en-US', { 
+                        month: 'short', 
+                        day: 'numeric', 
+                        hour: '2-digit', 
+                        minute: '2-digit' 
+                    });
+                    
+                    return `
+                        <div class="session-item ${isActive ? 'active' : ''}" onclick="switchToSession('${s.session_id}')">
+                            <div class="session-info">
+                                <span class="session-id-label">${shortId}...</span>
+                                <button 
+                                    class="session-delete-btn" 
+                                    onclick="event.stopPropagation(); deleteSessionById('${s.session_id}')"
+                                    title="Delete session"
+                                >✕</button>
+                            </div>
+                            <div class="session-meta">
+                                ${s.message_count || 0} messages • ${s.total_tokens || 0} tokens
+                            </div>
+                            <div class="session-meta">
+                                ${timeStr}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
             } catch (err) {
                 console.error('Failed to list sessions', err);
-                alert('Error loading sessions');
+            }
+        }
+
+        async function switchToSession(id) {
+            if (id === sessionId) return; // Already active
+            await loadSession(id);
+            // Refresh the sessions list to update active state
+            await loadSessionsList();
+        }
+
+        async function deleteSessionById(id) {
+            if (!confirm('Delete this session?')) return;
+            
+            try {
+                await fetch(`${API_URL}/chat/session/${id}`, { method: 'DELETE' });
+                
+                // If we deleted the active session, create a new one
+                if (id === sessionId) {
+                    await newSession();
+                }
+                
+                // Refresh the sessions list
+                await loadSessionsList();
+            } catch (e) {
+                console.error('Failed to delete session', e);
             }
         }
 
@@ -1228,6 +1415,12 @@
                 
                 // UI now follows backend: loadSession will refresh sidebar from backend state
                 await loadSession(sessionId);
+                
+                // Refresh sessions sidebar if open
+                const sessionsSidebar = document.getElementById('sessionsSidebar');
+                if (!sessionsSidebar.classList.contains('collapsed')) {
+                    await loadSessionsList();
+                }
             } catch (e) {
                 console.error('Error creating new session', e);
             }
@@ -1267,6 +1460,12 @@
                     // Save empty context and reload UI from backend
                     await saveSessionContext();
                     await loadSession(sessionId);
+                    
+                    // Refresh sessions sidebar if open
+                    const sessionsSidebar = document.getElementById('sessionsSidebar');
+                    if (!sessionsSidebar.classList.contains('collapsed')) {
+                        await loadSessionsList();
+                    }
                 } else {
                     console.error('Failed to create new session after delete');
                 }
@@ -1385,6 +1584,9 @@
         // create a new empty session just like a first-time launch.
         window.addEventListener('load', async () => {
             try {
+                // Load sessions list on page load
+                await loadSessionsList();
+                
                 const lastId = window.sessionStorage.getItem(LAST_SESSION_KEY);
                 if (lastId) {
                     const res = await fetch(`${API_URL}/chat/session/${lastId}`);
@@ -1417,6 +1619,8 @@
                 }
                 // Persist empty paper context and sync UI from backend
                 await saveSessionContext();
+                // Refresh sessions list after creating new session
+                await loadSessionsList();
             } catch (e) {
                 console.warn('Failed to initialize session on load', e);
             }

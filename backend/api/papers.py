@@ -144,9 +144,6 @@ async def upload_papers(
                         selected_paper_id=(conv.selected_paper_id if conv else None),
                         paper_ids=new_ids,
                     )
-                    # Clear messages and token usage to keep UI and backend aligned
-                    conv_mgr.delete_messages(session_id)
-                    tok.delete_session_usage(session_id)
         except Exception as e:  # pragma: no cover - defensive
             # Do not fail the upload if session update fails; just log.
             print(f"Warning: failed to attach uploaded papers to session {session_id}: {e}")

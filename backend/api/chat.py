@@ -151,11 +151,13 @@ async def chat_stream(
     app_state = request.app.state.app_state
 
     # Create or validate session
+    session_was_created = False
     if session_id:
         if not app_state.conversation_manager.session_exists(session_id):
             raise HTTPException(status_code=404, detail="Session not found")
     else:
         session_id = app_state.conversation_manager.create_session()
+        session_was_created = True
 
     # Add user message to conversation
     app_state.conversation_manager.add_message(
@@ -212,6 +214,10 @@ async def chat_stream(
         try:
             # Send session_id first
             yield f"data: {json.dumps({'type': 'session', 'session_id': session_id})}\n\n"
+            
+            # If this is a newly created session, notify frontend to refresh sessions list
+            if session_was_created:
+                yield f"data: {json.dumps({'type': 'session_created', 'session_id': session_id})}\n\n"
 
             # Log history info
             logger.info(f"Streaming chat - Session {session_id} has {len(history)} messages in history")
@@ -485,18 +491,11 @@ async def delete_history(request: Request, session_id: str):
 
 @router.get("/chat/sessions")
 async def list_sessions(request: Request):
-    """List all conversation sessions that have messages."""
+    """List all conversation sessions."""
     app_state = request.app.state.app_state
     sessions = app_state.conversation_manager.list_sessions()
 
-    # Only return sessions with messages
-    kept_sessions: list[dict] = []
-    for sess in sessions:
-        message_count = sess.get("message_count", 0)
-        if message_count > 0:
-            kept_sessions.append(sess)
-
-    return {"sessions": kept_sessions}
+    return {"sessions": sessions}
 
 
 @router.post("/chat/session")
@@ -614,12 +613,6 @@ async def update_session_context(
         paper_ids=paper_ids,
     )
 
-    # If the set of papers changed (not just order), clear history and
-    # token usage for this session. This keeps session state and UI
-    # aligned when papers are added/removed/replaced.
-    if set(old_paper_ids or []) != set(paper_ids or []):
-        app_state.conversation_manager.delete_messages(session_id)
-        app_state.token_tracker.delete_session_usage(session_id)
     # Return the canonical state so the frontend can always sync its
     # local view (currentPaperIds, selectedPaperId) to whatever the
     # backend actually stored after validation/deduplication.

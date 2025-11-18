@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+import hashlib
 
 import google.generativeai as genai
 
@@ -39,6 +40,15 @@ class MindmapService:
         self._graph_cache: dict[str, dict[str, Any]] = {}
         # In-memory cache of (paper_id, query) → tree for single-paper views
         self._paper_graph_cache: dict[str, dict[str, Any]] = {}
+
+    def reset_all(self) -> None:
+        """Clear all in-memory caches.
+        
+        Called during global data reset to ensure stale mindmap data
+        doesn't persist after papers are deleted.
+        """
+        self._graph_cache.clear()
+        self._paper_graph_cache.clear()
 
     def build_prompt(self, summaries: List[Dict[str, Any]], custom_query: Optional[str] = None) -> str:
         """Build prompt to extract a hierarchical knowledge tree as JSON (NotebookLM-style).
@@ -204,6 +214,18 @@ class MindmapService:
         ids = sorted(s.get("paper_id") for s in summaries if s.get("paper_id"))
         return "|".join(ids)
 
+    def _query_key(self, custom_query: Optional[str]) -> str:
+        return (custom_query or "").strip()
+
+    def _query_hash(self, query_key: str) -> str:
+        return hashlib.sha1(query_key.encode("utf-8")).hexdigest()[:16]
+
+    def _session_graph_path(self, session_id: str, fingerprint: str, query_key: str) -> Path:
+        base = self.storage_dir / "sessions" / session_id / (fingerprint or "_none")
+        base.mkdir(parents=True, exist_ok=True)
+        filename = f"{self._query_hash(query_key) or 'default'}.json"
+        return base / filename
+
     def _load_index(self) -> dict:
         if not self.index_file.exists():
             return {}
@@ -221,7 +243,7 @@ class MindmapService:
         except Exception:
             pass
 
-    def generate_graph(self, custom_query: Optional[str] = None, paper_ids: Optional[List[str]] = None) -> Dict[str, Any]:
+    def generate_graph(self, custom_query: Optional[str] = None, paper_ids: Optional[List[str]] = None, session_id: Optional[str] = None) -> Dict[str, Any]:
         """Generate a hierarchical knowledge tree from current papers using the LLM.
 
         If custom_query is provided, the generated tree is influenced by the
@@ -236,22 +258,32 @@ class MindmapService:
             return {"name": "Research Topics", "children": []}
         # Build a fingerprint for the current paper set to scope caching.
         fingerprint = self._current_paper_fingerprint(paper_ids=paper_ids)
-        query_key = (custom_query or "").strip()
+        query_key = self._query_key(custom_query)
 
-        # For now, only reuse the global on-disk cache when no paper_ids
-        # are provided (true global mindmap). Session-scoped graphs are
-        # cheap enough to regenerate and should not be mixed across
-        # different paper subsets.
+        # Reuse cache when possible for both global and session-scoped graphs.
+        # Cache key is based on the current paper set fingerprint and query.
         cache_key = f"{fingerprint}:::{query_key}"
-        if not paper_ids:
-            # Check in-memory cache first
-            if cache_key in self._graph_cache:
-                return self._graph_cache[cache_key]
 
-            # If not in memory, check on-disk index to see if we've
-            # previously generated a graph for this (fingerprint, query)
-            # combination in an earlier process. If so, and this was the
-            # default/global mindmap (empty query), we can reuse graph.json.
+        # Always check in-memory cache first
+        if cache_key in self._graph_cache:
+            return self._graph_cache[cache_key]
+
+        # For session-scoped graphs, attempt to reuse on-disk cache for this session
+        if session_id:
+            try:
+                p = self._session_graph_path(session_id, fingerprint, query_key)
+                if p.exists():
+                    with open(p, "r", encoding="utf-8") as f:
+                        tree = json.load(f)
+                    self._graph_cache[cache_key] = tree
+                    return tree
+            except Exception:
+                pass
+
+        # Only true global graphs (no paper_ids) can be reused from disk
+        # between processes. Session-scoped graphs are fast to rebuild and
+        # are not persisted to disk to avoid cross-session leakage.
+        if not paper_ids:
             index = self._load_index()
             meta = index.get(cache_key)
             if meta and not query_key and self.graph_file.exists():
@@ -285,8 +317,17 @@ class MindmapService:
             }
             self._save_index(index)
 
-            # Cache in memory for faster reuse in this process
-            self._graph_cache[cache_key] = tree
+        # Persist session-scoped graphs on disk for reuse across restarts
+        if session_id:
+            try:
+                p = self._session_graph_path(session_id, fingerprint, query_key)
+                with open(p, "w", encoding="utf-8") as f:
+                    json.dump(tree, f, ensure_ascii=False)
+            except Exception:
+                pass
+
+        # Cache in memory for faster reuse in this process (global or session)
+        self._graph_cache[cache_key] = tree
 
         return tree
     

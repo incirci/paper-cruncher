@@ -122,6 +122,7 @@ async def reset_all_data():
       app_state.conversation_manager.reset_all()
       app_state.token_tracker.reset_all()
       app_state.paper_manager.reset_all()
+      app_state.mindmap_service.reset_all()
     except Exception as exc:  # pragma: no cover - defensive
       print(f"Failed to reset in-memory state: {exc}")
 
@@ -233,13 +234,15 @@ async def serve_mindmap_page():
         async function loadTree() {
           document.getElementById('status').textContent = 'Loading...';
           try {
-            // Check for paper_id query parameter
+            // Check for query parameters
             const urlParams = new URLSearchParams(window.location.search);
             const paperId = urlParams.get('paper_id');
             const query = urlParams.get('query');
+            const sessionId = urlParams.get('session_id');
             
-            // Build API URL with optional paper_id and custom query
+            // Build API URL with optional session_id, paper_id, and custom query
             const apiParams = new URLSearchParams();
+            if (sessionId) apiParams.set('session_id', sessionId);
             if (paperId) apiParams.set('paper_id', paperId);
             if (query) apiParams.set('query', query);
             const apiUrl = apiParams.toString() ? `/api/mindmap?${apiParams.toString()}` : '/api/mindmap';
