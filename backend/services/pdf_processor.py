@@ -43,8 +43,11 @@ class PDFProcessor:
         if not snippet:
             return ""
 
-        # Limit to first ~400 characters to keep prompt small
-        snippet = snippet[:400]
+        # Limit to first N characters, configurable via settings
+        max_len = getattr(settings.chunking, "title_snippet_chars", 1000)
+        if max_len <= 0:
+            max_len = 1000
+        snippet = snippet[:max_len]
 
         prompt = (
             "You are given the beginning of a PDF research paper. "
@@ -104,7 +107,7 @@ class PDFProcessor:
 
         return f"{filename} ({inferred_title})"
 
-    def extract_metadata(self, pdf_path: Path) -> PaperMetadata:
+    def extract_metadata(self, pdf_path: Path, original_filename: str | None = None) -> PaperMetadata:
         """Extract metadata from a PDF file."""
         if not pdf_path.exists():
             raise FileNotFoundError(f"PDF file not found: {pdf_path}")
@@ -131,18 +134,21 @@ class PDFProcessor:
             except Exception:
                 first_page_text = ""
 
+        # Decide on logical filename for display: prefer the original upload name
+        # if provided, otherwise fall back to the on-disk name.
+        logical_filename = original_filename or pdf_path.name
+
         # Use AI plus PDF metadata to infer a human-readable title
         inferred_title = doc_title.strip()
         if not inferred_title:
             inferred_title = self._infer_title_with_ai(first_page_text)
 
         # Build canonical title using heuristic to avoid redundant duplication
-        filename = pdf_path.name
-        canonical_title = self._build_canonical_title(filename, inferred_title)
+        canonical_title = self._build_canonical_title(logical_filename, inferred_title)
 
         return PaperMetadata(
             id=paper_id,
-            filename=filename,
+            filename=logical_filename,
             canonical_title=canonical_title,
             filepath=str(pdf_path),
             page_count=page_count,
@@ -178,7 +184,11 @@ class PDFProcessor:
         return pages_text
 
     def process_paper(
-        self, pdf_path: Path, chunk_size: int = 1000, chunk_overlap: int = 200
+        self,
+        pdf_path: Path,
+        chunk_size: int = 1000,
+        chunk_overlap: int = 200,
+        original_filename: str | None = None,
     ) -> tuple[PaperMetadata, List[PaperChunk]]:
         """
         Process a PDF paper: extract metadata and create chunks.
@@ -191,8 +201,8 @@ class PDFProcessor:
         Returns:
             Tuple of (metadata, chunks)
         """
-        # Extract metadata
-        metadata = self.extract_metadata(pdf_path)
+        # Extract metadata (using the original upload filename for display)
+        metadata = self.extract_metadata(pdf_path, original_filename=original_filename)
 
         # Extract text with page numbers
         pages_text = self.extract_text_with_pages(pdf_path)

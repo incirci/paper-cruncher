@@ -3,7 +3,7 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse
@@ -86,6 +86,46 @@ async def root():
 async def health():
     """Health check endpoint."""
     return {"status": "healthy"}
+
+
+@app.post("/api/admin/reset")
+async def reset_all_data():
+    """Dangerous: wipe the entire data directory on disk.
+
+    This removes *everything* under the configured data root, including:
+    - Vector DB (embeddings / Chroma files)
+    - Conversation SQLite DB (messages + token usage)
+    - Uploaded PDFs
+    - Papers metadata JSON
+    - Any mindmap/cache artifacts stored under data/
+
+    Intended for development/debugging only.
+    """
+    from shutil import rmtree
+
+    # The vector DB path lives under the data directory, so use its
+    # parent as the canonical data root (e.g. ROOT/data).
+    data_root = settings.get_vector_db_path().parent
+
+    # Wipe on-disk data first.
+    try:
+      if data_root.exists():
+        rmtree(data_root)
+    except Exception as exc:  # pragma: no cover - defensive
+      print(f"Failed to delete data directory {data_root}: {exc}")
+
+    # Also clear any in-memory / DB-backed conversation, token, and
+    # paper state so list_sessions, debug endpoints, and /papers
+    # return a clean slate immediately after reset.
+    try:
+      app_state: AppState = app.state.app_state
+      app_state.conversation_manager.reset_all()
+      app_state.token_tracker.reset_all()
+      app_state.paper_manager.reset_all()
+    except Exception as exc:  # pragma: no cover - defensive
+      print(f"Failed to reset in-memory state: {exc}")
+
+    return {"message": f"All data reset: removed directory {data_root} and cleared conversations/tokens"}
 
 
 # Serve frontend

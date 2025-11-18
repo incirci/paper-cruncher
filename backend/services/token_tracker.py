@@ -24,6 +24,16 @@ class TokenTracker:
         # Initialize database
         self._init_db()
 
+    def reset_all(self) -> None:
+        """Delete all token usage records.
+
+        Used by the admin reset endpoint for a clean slate.
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM token_usage")
+            conn.commit()
+
     def _init_db(self):
         """Initialize database schema."""
         with sqlite3.connect(self.db_path) as conn:

@@ -60,6 +60,19 @@ class Conversation(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
     total_tokens: int = 0
+    # Optional paper context for this session
+    selected_paper_id: Optional[str] = None
+    paper_ids: List[str] = Field(default_factory=list)
+
+
+class SessionSummary(BaseModel):
+    """Lightweight summary for listing sessions."""
+
+    session_id: str
+    created_at: datetime
+    updated_at: datetime
+    total_tokens: int = 0
+    selected_paper_id: Optional[str] = None
 
 
 class TokenUsage(BaseModel):

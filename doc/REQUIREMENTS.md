@@ -6,7 +6,7 @@
 
 ### Overview
 
-Given a folder with journal articles (PDF), create an AI agent which can answer questions about these papers.
+Given a set of journal articles (PDF), create an AI agent which can answer questions about these papers. Papers are added via upload/drop-in in the UI.
 
 ### Application Type
 
@@ -16,11 +16,15 @@ Web application
 
 #### Sidebar (Left, Collapsible)
 
-- Display list of papers from the folder
+- Display list of papers available in the current session (uploaded/side-loaded PDFs)
 - Collapsible functionality for space optimization
 - Paper selection capability: click to select/unselect a paper
 - Visual indication of selected paper (highlight/checkmark)
 - Only one paper can be selected at a time
+- Support **drop-in / file-select upload** of papers (PDFs) via the sidebar as the primary and only way to add content (no legacy `papers/` folder scanning in the UI)
+  - Uploaded papers are saved under a persistent `uploads/` directory and indexed into the vector database for reuse across sessions, as long as the underlying files remain
+  - Uploaded papers are clearly labeled in the sidebar (e.g., "uploaded" badge or section) and displayed using their **canonical title** (e.g. `filename (inferred_title)` when helpful)
+  - Re-uploading a PDF that is already indexed (same file path under `uploads/`) must be fast: the system should reuse existing metadata and embeddings instead of re-extracting text and re-indexing chunks.
 
 #### Main Window (Chat Interface)
 
@@ -35,15 +39,16 @@ Web application
   - Clear the visible message history in the UI
   - Start a new backend session (new `session_id`) so token usage and context are tracked separately
   - Keep the currently selected paper context (if any) unless the user explicitly changes it
+  - When the session is saved, also persist any **uploaded/side-loaded papers** that were added during that session so the same logical session (chat history + paper set) can be reloaded later.
 
 ### AI Agent Requirements
 
 #### Context Awareness
 
-- Operate over a list of papers in a specified folder
+- Operate over a list of papers available in the current session (uploaded during the session and/or previously indexed uploads that still exist on disk)
 - Access metadata information:
   - File names
-  - Number of papers in folder
+  - Number of papers available in the current indexed set
   - Other relevant file metadata
 - Answer questions about file contents
 
@@ -74,6 +79,10 @@ Web application
 
 - Configurable option to remember conversations across sessions
 - Session persistence should be toggleable
+- When enabled, session persistence should include:
+  - Chat messages
+  - Selected paper (if any)
+  - References to any uploaded papers that were indexed for that session, so that reloading a session restores both context and available papers.
 
 ### Technical Configuration
 
@@ -129,36 +138,17 @@ Web application
 - No fallbacks for legacy compatibility
 - No backward compatibility concerns
 - Clean, modern code only
-- Forward-focused development approach
 
 #### Guidelines
 
 - Use modern Python features and best practices
 - Eliminate unnecessary abstractions
-- Write self-documenting code
 - Prioritize readability and maintainability
 - Remove dead code immediately
 
----
-
-## Knowledge Graph & Mindmap Visualization
-
-### Goal
-
-After indexing, automatically build a concise knowledge graph representing:
-
-- Key topics per paper
-- Relationships between topics and between papers
-- Cross-paper connections (e.g., shared methods, datasets, findings)
-- **Paper-specific hierarchy**: When a paper is selected, generate a paper-scoped mindmap with that paper as root
-  
-In addition to the default automatically generated structures, the user can override the mindmap behavior with **custom mindmap instructions** (a free-text query describing how the tree should be organized). This enables alternative views such as focusing on specific aspects, clustering criteria, or shallow vs. deep hierarchies.
-
 ### Behavior
 
-- The "📚 Index Papers" action should:
-  1) Index PDFs into the vector database, and
-  2) Invoke AI to extract topics/relationships and generate a knowledge graph.
+The system should automatically index uploaded PDFs when they are added via the sidebar (no separate "Index Papers" button in the UI). Internally, the indexing pipeline is:
 
 Internally, the pipeline is:
 
@@ -170,6 +160,8 @@ Internally, the pipeline is:
    - Asks for internal node names that describe conceptual content (what/why/how/context), not section names or publication types.
 5. The raw JSON tree from the LLM is post-processed to normalize and de-duplicate internal concept nodes before being persisted.
 
+- **Semantic hierarchy requirement**: In both global and paper-scoped mindmaps, each child node must be a semantic refinement of its parent (no generic structural labels), and sibling nodes under the same parent must share a clear, coherent theme.
+
 - **Paper-scoped mindmap**: When viewing mindmap with a paper selected:
   - Generate a hierarchical tree with the selected paper as the root node
   - Show topics, subtopics, and sub-subtopics covered in that specific paper
@@ -177,6 +169,7 @@ Internally, the pipeline is:
   
 - **Global mindmap**: When no paper is selected:
   - Show the full cross-paper knowledge graph (all papers organized by themes)
+  - Support user-provided **mindmap queries** that influence how the hierarchy is organized while still respecting all structural constraints (valid JSON, canonical titles as leaf nodes, depth limits, semantic parent–child relationships)
 
 ### Persistence
 
@@ -196,6 +189,11 @@ Internally, the pipeline is:
   ```
 
 - **Paper-specific mindmaps**: Generate on-demand for selected paper, not persisted (ephemeral)
+  - Cache generation results in memory keyed by `(paper_id, query)` to avoid redundant LLM calls for the same paper and instructions within a run
+
+- **Global mindmap caching**:
+  - Cache and reuse global mindmaps based on the current set of indexed papers and the active mindmap query
+  - Persist the default (no custom query) global mindmap to `data/mindmap/graph.json` and track fingerprints in an index file so matching configurations can reuse the existing graph across restarts
 
 ### Visualization
 

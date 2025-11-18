@@ -26,20 +26,36 @@ class ConversationManager:
         # Initialize database
         self._init_db()
 
+    def reset_all(self) -> None:
+        """Delete all conversations and sessions.
+
+        Used by the admin reset endpoint to ensure there is no
+        historical state left in the conversation database.
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM messages")
+            cursor.execute("DELETE FROM conversations")
+            conn.commit()
+
     def _init_db(self):
         """Initialize database schema."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
 
-            # Conversations table
-            cursor.execute("""
+            # Conversations table (no legacy schema; always create with full set)
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS conversations (
                     session_id TEXT PRIMARY KEY,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
-                    total_tokens INTEGER DEFAULT 0
+                    total_tokens INTEGER DEFAULT 0,
+                    selected_paper_id TEXT,
+                    paper_ids TEXT
                 )
-            """)
+                """
+            )
 
             # Messages table
             cursor.execute("""
@@ -57,19 +73,29 @@ class ConversationManager:
 
             conn.commit()
 
-    def create_session(self) -> str:
-        """Create a new conversation session."""
+    def create_session(
+        self,
+        selected_paper_id: Optional[str] = None,
+        paper_ids: Optional[list[str]] = None,
+    ) -> str:
+        """Create a new conversation session.
+
+        Args:
+            selected_paper_id: Optional currently selected paper ID
+            paper_ids: Optional list of paper IDs associated with this session
+        """
         session_id = str(uuid.uuid4())
         now = datetime.now().isoformat()
+        paper_ids_json = json.dumps(paper_ids or [])
 
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                INSERT INTO conversations (session_id, created_at, updated_at, total_tokens)
-                VALUES (?, ?, ?, 0)
+                INSERT INTO conversations (session_id, created_at, updated_at, total_tokens, selected_paper_id, paper_ids)
+                VALUES (?, ?, ?, 0, ?, ?)
             """,
-                (session_id, now, now),
+                (session_id, now, now, selected_paper_id, paper_ids_json),
             )
             conn.commit()
 
@@ -155,7 +181,7 @@ class ConversationManager:
             # Get conversation
             cursor.execute(
                 """
-                SELECT session_id, created_at, updated_at, total_tokens
+                SELECT session_id, created_at, updated_at, total_tokens, selected_paper_id, paper_ids
                 FROM conversations
                 WHERE session_id = ?
             """,
@@ -189,18 +215,48 @@ class ConversationManager:
                     )
                 )
 
+            paper_ids: list[str] = []
+            if conv_row[5]:
+                try:
+                    paper_ids = json.loads(conv_row[5])
+                except Exception:
+                    paper_ids = []
+
             return Conversation(
                 session_id=conv_row[0],
                 created_at=datetime.fromisoformat(conv_row[1]),
                 updated_at=datetime.fromisoformat(conv_row[2]),
                 total_tokens=conv_row[3],
                 messages=messages,
+                selected_paper_id=conv_row[4],
+                paper_ids=paper_ids,
             )
 
     def get_conversation_history(self, session_id: str) -> List[Message]:
         """Get conversation history (messages only)."""
         conversation = self.get_conversation(session_id)
         return conversation.messages if conversation else []
+
+    def delete_messages(self, session_id: str) -> None:
+        """Delete all messages for a session but keep the session row.
+
+        Also resets the accumulated token count and updates the session's
+        updated_at timestamp. This is used when the paper set changes but
+        we want to keep the session metadata intact.
+        """
+        now = datetime.now().isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
+            cursor.execute(
+                """
+                UPDATE conversations
+                SET updated_at = ?, total_tokens = 0
+                WHERE session_id = ?
+                """,
+                (now, session_id),
+            )
+            conn.commit()
 
     def delete_conversation(self, session_id: str):
         """Delete a conversation and all its messages."""
@@ -215,14 +271,18 @@ class ConversationManager:
             conn.commit()
 
     def list_sessions(self) -> List[dict]:
-        """List all conversation sessions."""
+        """List all conversation sessions with message counts."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
 
             cursor.execute("""
-                SELECT session_id, created_at, updated_at, total_tokens
-                FROM conversations
-                ORDER BY updated_at DESC
+                SELECT c.session_id, c.created_at, c.updated_at, c.total_tokens, 
+                       c.selected_paper_id, c.paper_ids,
+                       COUNT(m.id) as message_count
+                FROM conversations c
+                LEFT JOIN messages m ON c.session_id = m.session_id
+                GROUP BY c.session_id
+                ORDER BY c.updated_at DESC
             """)
 
             sessions = []
@@ -233,10 +293,37 @@ class ConversationManager:
                         "created_at": row[1],
                         "updated_at": row[2],
                         "total_tokens": row[3],
+                        "selected_paper_id": row[4],
+                        "paper_ids": row[5],
+                        "message_count": row[6],
                     }
                 )
 
             return sessions
+
+    def update_session_papers(
+        self,
+        session_id: str,
+        selected_paper_id: Optional[str],
+        paper_ids: list[str],
+    ) -> None:
+        """Update paper context for an existing session."""
+        paper_ids_json = json.dumps(paper_ids or [])
+        now = datetime.now().isoformat()
+
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE conversations
+                SET selected_paper_id = ?,
+                    paper_ids = ?,
+                    updated_at = ?
+                WHERE session_id = ?
+                """,
+                (selected_paper_id, paper_ids_json, now, session_id),
+            )
+            conn.commit()
 
     def session_exists(self, session_id: str) -> bool:
         """Check if a session exists."""

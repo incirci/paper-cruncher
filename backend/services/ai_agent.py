@@ -2,6 +2,7 @@
 
 from typing import List, Optional, Iterator, Tuple
 
+import logging
 import google.generativeai as genai
 
 from backend.core.config import settings
@@ -51,6 +52,34 @@ class AIAgent:
 
         # System prompt template
         self.system_prompt = self._create_system_prompt()
+        self.logger = logging.getLogger(__name__)
+
+    # --- Safe response helpers ---
+    @staticmethod
+    def _extract_text_from_response(response) -> str:
+        """Safely extract concatenated text parts from a Gemini response.
+
+        Avoids using the .text quick accessor which can raise when
+        no valid Part is present (e.g., finish_reason = 1 / blocked).
+        Returns an empty string if no text content can be found.
+        """
+        if not response:
+            return ""
+
+        try:
+            candidates = getattr(response, "candidates", []) or []
+        except Exception:  # noqa: BLE001
+            return ""
+
+        texts: List[str] = []
+        for cand in candidates:
+            content = getattr(cand, "content", None)
+            parts = getattr(content, "parts", []) if content else []
+            for part in parts:
+                if getattr(part, "text", None):
+                    texts.append(part.text)
+
+        return "\n".join(t.strip() for t in texts if t and t.strip()).strip()
 
     # --- Imagen integration helpers ---
     def is_visualization_request(self, query: str) -> bool:
@@ -68,11 +97,19 @@ class AIAgent:
         conversation_history: List[Message],
         paper_id: Optional[str] = None,
         max_context_chars: int = 2000,
+        allowed_paper_ids: Optional[List[str]] = None,
     ) -> Tuple[str, List[str]]:
         """Build an Imagen prompt, leveraging RAG context to guide the visual content."""
-        # Reuse orchestrator-worker to gather key chunks
-        orchestration = self._orchestrate_retrieval(query, paper_id=paper_id)
-        relevant_chunks = self._execute_worker_commands(orchestration['commands'])
+        # Reuse orchestrator-worker to gather key chunks, respecting session paper scope
+        orchestration = self._orchestrate_retrieval(
+            query,
+            paper_id=paper_id,
+            allowed_paper_ids=allowed_paper_ids,
+        )
+        relevant_chunks = self._execute_worker_commands(
+            orchestration["commands"],
+            allowed_paper_ids=allowed_paper_ids,
+        )
         context = self._build_context(relevant_chunks, include_overview=True)
         source_papers = self._extract_source_papers(relevant_chunks)
 
@@ -181,6 +218,7 @@ Formatting Guidelines:
         query: str,
         conversation_history: List[Message],
         paper_id: Optional[str] = None,
+        allowed_paper_ids: Optional[List[str]] = None,
     ) -> tuple[str, List[str]]:
         """Build a prompt using the orchestrator-worker retrieval flow.
 
@@ -191,8 +229,15 @@ Formatting Guidelines:
 
         Returns a tuple of (prompt, source_papers).
         """
-        orchestration = self._orchestrate_retrieval(query, paper_id=paper_id)
-        relevant_chunks = self._execute_worker_commands(orchestration['commands'])
+        orchestration = self._orchestrate_retrieval(
+            query,
+            paper_id=paper_id,
+            allowed_paper_ids=allowed_paper_ids,
+        )
+        relevant_chunks = self._execute_worker_commands(
+            orchestration["commands"],
+            allowed_paper_ids=allowed_paper_ids,
+        )
         if not relevant_chunks:
             raise RuntimeError(
                 f"Worker found no chunks for orchestrated commands. "
@@ -217,9 +262,21 @@ Formatting Guidelines:
         # Streaming via GenerativeModel
         stream = self.model.generate_content(prompt, stream=True)
         for chunk in stream:
-            if getattr(chunk, "text", None):
-                full_text += chunk.text
-                yield chunk.text, None
+            # Prefer the SDK's quick accessor when available
+            chunk_text = getattr(chunk, "text", None)
+            if not chunk_text:
+                # Fallback: try to pull text parts manually
+                chunk_text = self._extract_text_from_response(chunk)
+
+            # Debug log for streamed chunks
+            try:
+                self.logger.info("AIAgent stream chunk: %r, text=%r", chunk, chunk_text)
+            except Exception:
+                pass
+
+            if chunk_text:
+                full_text += chunk_text
+                yield chunk_text, None
 
         # Estimate token usage using count_tokens
         prompt_tokens = self.count_tokens(prompt)
@@ -233,7 +290,12 @@ Formatting Guidelines:
         )
         yield "", token_usage
 
-    def _orchestrate_retrieval(self, query: str, paper_id: Optional[str] = None) -> dict:
+    def _orchestrate_retrieval(
+        self,
+        query: str,
+        paper_id: Optional[str] = None,
+        allowed_paper_ids: Optional[List[str]] = None,
+    ) -> dict:
         """
         Orchestrator Agent: Analyzes query and issues specific commands for information gathering.
         
@@ -243,13 +305,31 @@ Formatting Guidelines:
         Args:
             query: User's question
             paper_id: Optional paper ID to scope retrieval to a specific paper
+            allowed_paper_ids: Optional list of paper IDs allowed for this session
             
         Returns:
             Dictionary with orchestration commands
         """
         paper_summaries = self.vector_db.get_paper_summaries()
+
+        # First, restrict to session-allowed papers if provided
+        if allowed_paper_ids:
+            allowed_set = set(allowed_paper_ids)
+            before_count = len(paper_summaries)
+            paper_summaries = [
+                p for p in paper_summaries if p.get("paper_id") in allowed_set
+            ]
+            try:
+                self.logger.info(
+                    "Orchestrator scoping: allowed_paper_ids=%s, before=%d, after=%d",
+                    sorted(list(allowed_set)),
+                    before_count,
+                    len(paper_summaries),
+                )
+            except Exception:
+                pass
         
-        # Filter to specific paper if paper_id is provided
+        # Further filter to specific paper if paper_id is provided
         if paper_id:
             paper_summaries = [p for p in paper_summaries if p.get('paper_id') == paper_id]
             if not paper_summaries:
@@ -343,15 +423,31 @@ For PAPERS, use: ALL or specific filenames separated by commas
         
         return {'commands': commands, 'strategy': strategy, 'reasoning': reasoning}
 
-    def _execute_worker_commands(self, commands: list) -> List[dict]:
+    def _execute_worker_commands(
+        self,
+        commands: list,
+        allowed_paper_ids: Optional[List[str]] = None,
+    ) -> List[dict]:
         """
         Worker Agent: Executes specific retrieval commands from orchestrator.
         
         This agent specializes in deep dives and extracting specific information.
         """
-        all_chunks = []
+        all_chunks: List[dict] = []
         chunk_ids_seen = set()
-        
+
+        allowed_set = set(allowed_paper_ids) if allowed_paper_ids else None
+
+        # Debug logging of allowed paper scope
+        try:
+            self.logger.info(
+                "Worker start: commands=%d allowed_paper_ids=%s",
+                len(commands),
+                sorted(list(allowed_set)) if allowed_set is not None else None,
+            )
+        except Exception:
+            pass
+
         for cmd in commands:
             action = cmd.get('action', '')
             papers = cmd.get('papers', [])
@@ -371,6 +467,25 @@ For PAPERS, use: ALL or specific filenames separated by commas
                 if title:
                     paper_id_map[title] = p['paper_id']
             paper_ids = [paper_id_map[fname] for fname in papers if fname in paper_id_map]
+
+            # Restrict to allowed paper_ids if provided
+            if allowed_set is not None:
+                paper_ids = [pid for pid in paper_ids if pid in allowed_set]
+
+            # If nothing remains after scoping, skip this command entirely
+            if not paper_ids:
+                continue
+
+            try:
+                self.logger.info(
+                    "Worker cmd: action=%s focus=%s papers=%s resolved_ids=%s",
+                    action,
+                    focus,
+                    papers,
+                    paper_ids,
+                )
+            except Exception:
+                pass
             
             if not paper_ids:
                 continue
@@ -407,6 +522,45 @@ For PAPERS, use: ALL or specific filenames separated by commas
                         all_chunks.append(chunk)
                         chunk_ids_seen.add(chunk['id'])
         
+        # Final defensive filter: ensure every chunk belongs to allowed_paper_ids
+        if allowed_set is not None:
+            scoped_chunks: List[dict] = []
+            dropped: List[str] = []
+            for chunk in all_chunks:
+                meta = chunk.get("metadata", {}) or {}
+                pid = meta.get("paper_id")
+                if pid is None or pid in allowed_set:
+                    scoped_chunks.append(chunk)
+                else:
+                    dropped.append(str(pid))
+            try:
+                self.logger.info(
+                    "Worker final filter: kept_chunks=%d dropped_chunks=%d dropped_paper_ids=%s",
+                    len(scoped_chunks),
+                    len(dropped),
+                    sorted(set(dropped)),
+                )
+            except Exception:
+                pass
+            all_chunks = scoped_chunks
+
+        # Log final chunk paper_ids for this retrieval
+        try:
+            paper_ids_in_chunks = sorted(
+                {
+                    (chunk.get("metadata", {}) or {}).get("paper_id")
+                    for chunk in all_chunks
+                    if (chunk.get("metadata", {}) or {}).get("paper_id") is not None
+                }
+            )
+            self.logger.info(
+                "Worker result: total_chunks=%d paper_ids_in_chunks=%s",
+                len(all_chunks),
+                paper_ids_in_chunks,
+            )
+        except Exception:
+            pass
+
         return all_chunks
 
     def generate_response_with_planning(
@@ -414,23 +568,33 @@ For PAPERS, use: ALL or specific filenames separated by commas
         query: str,
         conversation_history: List[Message],
         session_id: str,
+        paper_id: Optional[str] = None,
+        allowed_paper_ids: Optional[List[str]] = None,
     ) -> tuple[str, List[str], TokenUsage]:
-        """
-        Generate response using two-tier approach: planning then focused retrieval.
+        """Generate response using two-tier approach: planning then focused retrieval.
 
         Args:
             query: User's question
             conversation_history: Previous messages in the conversation
             session_id: Current session ID
+            paper_id: Optional paper ID to scope retrieval to a specific paper
 
         Returns:
             Tuple of (response_text, source_papers, token_usage)
         """
-        # Step 1: Orchestrator analyzes and issues commands
-        orchestration = self._orchestrate_retrieval(query)
+        # Step 1: Orchestrator analyzes and issues commands, scoped by
+        # session paper set (allowed_paper_ids) and optionally a specific paper_id.
+        orchestration = self._orchestrate_retrieval(
+            query,
+            paper_id=paper_id,
+            allowed_paper_ids=allowed_paper_ids,
+        )
         
         # Step 2: Worker executes commands and gathers information
-        relevant_chunks = self._execute_worker_commands(orchestration['commands'])
+        relevant_chunks = self._execute_worker_commands(
+            orchestration['commands'],
+            allowed_paper_ids=allowed_paper_ids,
+        )
         
         # If no chunks retrieved, raise error
         if not relevant_chunks:
@@ -439,12 +603,50 @@ For PAPERS, use: ALL or specific filenames separated by commas
         # Step 3: Build context and generate final response
         context = self._build_context(relevant_chunks, include_overview=True)
         source_papers = self._extract_source_papers(relevant_chunks)
+        try:
+            paper_ids_in_chunks = sorted(
+                {
+                    (chunk.get("metadata", {}) or {}).get("paper_id")
+                    for chunk in relevant_chunks
+                    if (chunk.get("metadata", {}) or {}).get("paper_id") is not None
+                }
+            )
+            self.logger.info(
+                "AIAgent planning: session_id=%s allowed_paper_ids=%s chunk_paper_ids=%s source_papers=%s",
+                session_id,
+                sorted(allowed_paper_ids or []),
+                paper_ids_in_chunks,
+                source_papers,
+            )
+        except Exception:
+            pass
         enhanced_query = self._enhance_query(query)
         prompt = self._build_prompt(enhanced_query, context, conversation_history)
         
+        # Debug: log prompt
+        try:
+            self.logger.info("AIAgent prompt (session_id=%s):\n%s", session_id, prompt)
+        except Exception:
+            pass
+
         response = self.model.generate_content(prompt)
 
-        out_text = getattr(response, "text", "") or ""
+        # Prefer the SDK's quick accessor first
+        try:
+            out_text = getattr(response, "text", "") or ""
+        except Exception:  # noqa: BLE001
+            out_text = ""
+
+        # Fallback to manual extraction if quick accessor is empty/unavailable
+        if not out_text:
+            out_text = self._extract_text_from_response(response)
+
+        # Debug: log raw response and extracted text length
+        try:
+            self.logger.info("AIAgent raw response (session_id=%s): %r", session_id, response)
+            self.logger.info("AIAgent extracted text length=%d", len(out_text or ""))
+        except Exception:
+            pass
 
         # Token usage (best-effort via count_tokens)
         prompt_tokens = self.count_tokens(prompt)
@@ -464,6 +666,8 @@ For PAPERS, use: ALL or specific filenames separated by commas
         query: str,
         conversation_history: List[Message],
         session_id: str,
+        paper_id: Optional[str] = None,
+        allowed_paper_ids: Optional[List[str]] = None,
     ) -> Iterator[tuple[str, List[str], Optional[TokenUsage]]]:
         """
         Generate streaming response using RAG pipeline.
@@ -477,8 +681,14 @@ For PAPERS, use: ALL or specific filenames separated by commas
             Tuples of (text_chunk, source_papers, token_usage)
             token_usage is only provided in the final chunk
         """
-        # Use the orchestrator-worker flow to prepare prompt
-        prompt, source_papers = self.build_prompt_with_orchestration(query, conversation_history)
+        # Use the orchestrator-worker flow to prepare prompt, respecting
+        # session paper set (allowed_paper_ids) and optional paper_id
+        prompt, source_papers = self.build_prompt_with_orchestration(
+            query,
+            conversation_history,
+            paper_id=paper_id,
+            allowed_paper_ids=allowed_paper_ids,
+        )
 
         # Stream the model output
         for chunk_text, usage in self.stream_model_output(prompt, session_id):
@@ -545,7 +755,13 @@ For PAPERS, use: ALL or specific filenames separated by commas
             paper_name = chunk["metadata"].get("paper_filename")
             if paper_name:
                 papers.add(paper_name)
-        return sorted(list(papers))
+
+        result = sorted(list(papers))
+        try:
+            self.logger.info("Extracted source papers from chunks: %s", result)
+        except Exception:
+            pass
+        return result
 
     def _build_prompt(
         self, query: str, context: str, conversation_history: List[Message]

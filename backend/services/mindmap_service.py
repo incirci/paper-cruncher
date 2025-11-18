@@ -20,6 +20,7 @@ class MindmapService:
         self.storage_dir = storage_dir or (ROOT_DIR / "data" / "mindmap")
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         self.graph_file = self.storage_dir / "graph.json"
+        self.index_file = self.storage_dir / "graph_index.json"
 
         # Configure LLM (use stable, low-temp model for structured JSON)
         genai.configure(api_key=settings.google_api_key)
@@ -33,6 +34,11 @@ class MindmapService:
                 "max_output_tokens": getattr(settings.agent, "orchestrator_max_output_tokens", 2048),
             },
         )
+
+        # In-memory cache of (paper set fingerprint, query) → tree for globals
+        self._graph_cache: dict[str, dict[str, Any]] = {}
+        # In-memory cache of (paper_id, query) → tree for single-paper views
+        self._paper_graph_cache: dict[str, dict[str, Any]] = {}
 
     def build_prompt(self, summaries: List[Dict[str, Any]], custom_query: Optional[str] = None) -> str:
         """Build prompt to extract a hierarchical knowledge tree as JSON (NotebookLM-style).
@@ -98,6 +104,8 @@ class MindmapService:
             f"- Keep node names concise ( {max_node_length} characters), descriptive, and ASCII-safe.\n"
             "- Do NOT use generic structural or publication-type labels as node names (for example: 'Introduction', 'Methods', 'Results', 'Discussion', 'Conclusion', 'Overview', 'Review', 'State of the Art', 'Literature Review').\n"
             "- Internal node names should summarize what is being studied or addressed and, where applicable, how or in what context (for example, combining a phenomenon or task, relevant variables or inputs, data or datasets, methods, equipment or tools, or settings), without mentioning that it is a section or a review.\n"
+            "- A child node must be a semantic refinement of its parent (a more specific aspect, subtype, mechanism, context, dataset, task, or application of the parent concept). Do NOT group unrelated topics under the same parent.\n"
+            "- Sibling nodes under the same parent must share a clear unifying theme that is accurately captured by the parent's name.\n"
             "- Sort children alphabetically by 'name' at every level for determinism.\n"
             "- Output ONLY JSON. No markdown, no commentary, no code fences.\n"
         )
@@ -105,6 +113,57 @@ class MindmapService:
         if custom_query:
             custom_block = (
                 "\n\nCustom user instructions for structuring the mindmap (must still obey ALL constraints above except for the root node name which can be overruled by the custom instruction):\n"
+                f"{custom_query}\n"
+            )
+            return base_prompt + custom_block
+
+        return base_prompt
+
+    def build_single_paper_prompt(self, summary: Dict[str, Any], custom_query: Optional[str] = None) -> str:
+        """Build prompt for a single-paper mindmap (paper as root node).
+
+        The model is asked to organize the content of one paper into a
+        hierarchical tree: Paper Name (root) > Main Topics > Subtopics >
+        Sub-subtopics.
+        """
+        title = summary.get("paper_title") or summary.get("paper_filename", "Paper")
+        raw_summary = summary.get("summary", "") or ""
+        cleaned_summary = raw_summary.replace("\n", " ")
+
+        max_depth = settings.mindmap.max_depth
+        max_node_length = settings.mindmap.node_name_max_length
+
+        base_prompt = (
+            "You are an information architect. From the content description of a single research paper, "
+            "produce a hierarchical mindmap that captures its main topics and subtopics.\n\n"
+            f"PAPER (canonical title): {title}\n"
+            f"SUMMARY:\n{cleaned_summary}\n\n"
+            "Output STRICTLY valid JSON (no markdown, no backticks, no explanation) with this structure:\n"
+            "{\n"
+            '  "name": "Paper canonical title",\n'
+            '  "children": [\n'
+            '    {"name": "Main Topic", "children": [\n'
+            '      {"name": "Subtopic", "children": [\n'
+            '        {"name": "Sub-subtopic"}\n'
+            '      ]}\n'
+            '    ]}\n'
+            '  ]\n'
+            "}\n\n"
+            "Constraints (must follow all):\n"
+            f"- Use the canonical paper title EXACTLY as the root 'name': {title}.\n"
+            f"- Maximum allowed depth is {max_depth} levels from root to deepest subtopic.\n"
+            f"- Keep node names concise (<= {max_node_length} characters), descriptive, and ASCII-safe.\n"
+            "- Do NOT use generic structural or publication-type labels as node names (for example: 'Introduction', 'Methods', 'Results', 'Discussion', 'Conclusion', 'Overview', 'Review').\n"
+            "- Internal node names should summarize what is being studied or addressed and, where applicable, how or in what context.\n"
+            "- A child node must always be semantically contained within its parent (a more specific topic, phenomenon, variable, method, dataset, context, or application of the parent). Do NOT attach unrelated ideas under a topic just to reuse nodes.\n"
+            "- Sibling nodes under the same parent must all be coherent subtopics of that parent concept.\n"
+            "- Sort children alphabetically by 'name' at every level for determinism.\n"
+            "- Output ONLY JSON. No markdown, no commentary, no code fences.\n"
+        )
+
+        if custom_query:
+            custom_block = (
+                "\n\nCustom user instructions for structuring the mindmap (must still obey ALL constraints above except for the root node name which must stay as the canonical paper title):\n"
                 f"{custom_query}\n"
             )
             return base_prompt + custom_block
@@ -125,22 +184,86 @@ class MindmapService:
         data.setdefault("children", [])
         return data
 
-    def _summaries(self) -> List[Dict[str, Any]]:
+    def _summaries(self, paper_ids: Optional[List[str]] = None) -> List[Dict[str, Any]]:
         try:
-            return self.vector_db.get_paper_summaries()
+            summaries = self.vector_db.get_paper_summaries()
+            if paper_ids:
+                allowed = set(paper_ids)
+                summaries = [s for s in summaries if s.get("paper_id") in allowed]
+            return summaries
         except Exception:
             return []
 
-    def generate_graph(self, custom_query: Optional[str] = None) -> Dict[str, Any]:
+    def _current_paper_fingerprint(self, paper_ids: Optional[List[str]] = None) -> str:
+        """Compute a stable fingerprint for the current set of papers.
+
+        This is used to scope cached mindmaps to a specific paper set so
+        that adding/removing papers automatically invalidates older graphs.
+        """
+        summaries = self._summaries(paper_ids=paper_ids)
+        ids = sorted(s.get("paper_id") for s in summaries if s.get("paper_id"))
+        return "|".join(ids)
+
+    def _load_index(self) -> dict:
+        if not self.index_file.exists():
+            return {}
+        try:
+            with open(self.index_file, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+
+    def _save_index(self, index: dict) -> None:
+        self.storage_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            with open(self.index_file, "w", encoding="utf-8") as f:
+                json.dump(index, f, indent=2, ensure_ascii=False)
+        except Exception:
+            pass
+
+    def generate_graph(self, custom_query: Optional[str] = None, paper_ids: Optional[List[str]] = None) -> Dict[str, Any]:
         """Generate a hierarchical knowledge tree from current papers using the LLM.
 
         If custom_query is provided, the generated tree is influenced by the
         additional instructions but still obeys all structural constraints.
+
+        The result is cached per (paper set fingerprint, custom_query) pair
+        so that subsequent requests reuse existing graphs when the query and
+        paper set have not changed.
         """
-        summaries = self._summaries()
+        summaries = self._summaries(paper_ids=paper_ids)
         if not summaries:
             return {"name": "Research Topics", "children": []}
+        # Build a fingerprint for the current paper set to scope caching.
+        fingerprint = self._current_paper_fingerprint(paper_ids=paper_ids)
+        query_key = (custom_query or "").strip()
 
+        # For now, only reuse the global on-disk cache when no paper_ids
+        # are provided (true global mindmap). Session-scoped graphs are
+        # cheap enough to regenerate and should not be mixed across
+        # different paper subsets.
+        cache_key = f"{fingerprint}:::{query_key}"
+        if not paper_ids:
+            # Check in-memory cache first
+            if cache_key in self._graph_cache:
+                return self._graph_cache[cache_key]
+
+            # If not in memory, check on-disk index to see if we've
+            # previously generated a graph for this (fingerprint, query)
+            # combination in an earlier process. If so, and this was the
+            # default/global mindmap (empty query), we can reuse graph.json.
+            index = self._load_index()
+            meta = index.get(cache_key)
+            if meta and not query_key and self.graph_file.exists():
+                try:
+                    tree = self.load_graph()
+                    self._graph_cache[cache_key] = tree
+                    return tree
+                except Exception:
+                    # Fall through to regeneration on parse errors
+                    pass
+
+        # Build and send prompt
         prompt = self.build_prompt(summaries, custom_query=custom_query)
         response = self.model.generate_content(prompt)
         tree = self._safe_parse_json(response.text or "")
@@ -148,37 +271,60 @@ class MindmapService:
         # Post-process the tree to normalize and de-duplicate internal concepts
         tree = self._normalize_and_deduplicate(tree)
 
+        # Persist as graph.json and update index only for true global graphs
+        if not paper_ids:
+            if not query_key:
+                self.save_graph(tree)
+
+            # Update on-disk index for query → metadata mapping
+            index = self._load_index()
+            index[cache_key] = {
+                "fingerprint": fingerprint,
+                "query": query_key,
+                "persisted": not bool(query_key),
+            }
+            self._save_index(index)
+
+            # Cache in memory for faster reuse in this process
+            self._graph_cache[cache_key] = tree
+
         return tree
     
-    def generate_paper_tree(self, paper_id: str) -> Dict[str, Any]:
-        """Extract a subtree for a single paper from the global mindmap.
-        
-        This searches the global tree for all occurrences of the paper
-        and returns a tree with the paper as root and all its topic contexts.
+    def generate_paper_tree(self, paper_id: str, custom_query: Optional[str] = None) -> Dict[str, Any]:
+        """Generate a mindmap focused on a single paper.
+
+        Instead of slicing the global tree, this builds a dedicated
+        hierarchy for the selected paper using only its summary, with
+        the paper's canonical title as the root node.
         """
-        # Load the global tree
-        global_tree = self.load_graph()
-        
-        # Get paper canonical title (or filename) from paper_id
         summaries = self._summaries()
-        paper_name = None
+        paper_summary: Optional[Dict[str, Any]] = None
         for s in summaries:
             if s.get("paper_id") == paper_id:
-                paper_name = s.get("paper_title") or s.get("paper_filename")
+                paper_summary = s
                 break
 
-        if not paper_name:
+        if not paper_summary:
             return {"name": "Paper Not Found", "children": []}
 
-        # Search for all occurrences of this paper in the tree and collect parent topics
-        topics = []
-        self._find_paper_topics(global_tree, paper_name, [], topics)
+        # Check in-memory cache for this paper + query
+        query_key = (custom_query or "").strip()
+        cache_key = f"{paper_id}:::{query_key}"
+        if cache_key in self._paper_graph_cache:
+            return self._paper_graph_cache[cache_key]
 
-        if not topics:
-            return {"name": paper_name, "children": []}
+        # Build and send prompt for this single paper
+        prompt = self.build_single_paper_prompt(paper_summary, custom_query=custom_query)
+        response = self.model.generate_content(prompt)
+        tree = self._safe_parse_json(response.text or "")
 
-        # Build a tree with paper as root and collected topics as children
-        return {"name": paper_name, "children": topics}
+        # Normalize/deduplicate concept nodes for consistency
+        tree = self._normalize_and_deduplicate(tree)
+
+        # Cache for this process so repeated views reuse the same graph
+        self._paper_graph_cache[cache_key] = tree
+
+        return tree
     
     def _find_paper_topics(self, node: Dict[str, Any], paper_name: str, path: List[str], result: List[Dict[str, Any]]) -> None:
         """Recursively find all paths leading to a specific paper."""

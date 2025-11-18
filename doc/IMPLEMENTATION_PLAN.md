@@ -28,17 +28,17 @@ http://localhost:8000
 
 ## Usage Flow
 
-1. Add PDFs to `papers/` folder
-2. Click "📚 Index Papers" button (one-time)
-3. Chat with AI about your papers
-4. Papers persist - no re-indexing needed unless adding new papers
+1. Upload or drop PDFs into the sidebar (primary flow; no `papers/` folder required in the UI)
+2. The backend automatically indexes newly uploaded PDFs into the vector database on upload and stores their metadata under a persistent `uploads/` directory
+3. Chat with AI about your papers (scoped to the selected paper or across all papers when none is selected)
+4. Indexed papers persist across app restarts as long as their files remain in `uploads/`; no manual re-indexing is needed unless files are added, changed, or removed
 
 ## Architecture Decisions
 
 ### Current Implementation
 
 - **Retrieval**: Orchestrator-worker pattern (single path)
-- **Storage**: ChromaDB for vectors, SQLite for conversations
+- **Storage**: ChromaDB for vectors, SQLite for conversations, `uploads/` directory plus `papers_metadata.json` for persistent paper metadata
 - **Frontend**: Vanilla JS served by FastAPI
 - **Markdown**: Marked.js for formatting
 - **Memory**: Configurable session persistence
@@ -46,6 +46,7 @@ http://localhost:8000
 ### Key Features
 
 - Manual indexing control (user-triggered)
+- Auto-indexing on upload (no separate "Index Papers" button used in the UI)
 - Streaming responses for better UX
 - Token optimization through smart chunking
 - Context-aware conversation history (last 10 messages)
@@ -95,12 +96,21 @@ Completed tasks:
 
 Add a small set of high-impact UI improvements inspired by the ChatGPT interface.
 
-Planned tasks:
+Completed tasks:
 
-- [ ] File/image upload: Add an upload control to the chat input area to attach files/images to the current session and expose them to the backend (initially as metadata and temporary storage, without automatic indexing).
-- [ ] Scroll-to-bottom button: Show a floating "scroll to latest" button when the user scrolls up in a long conversation; clicking jumps to the newest message and re-enables auto-scroll.
-- [ ] New Chat: Add a "New Chat" button that clears the visible chat history and requests a new backend `session_id`, preserving the currently selected paper unless changed by the user.
-- [ ] Per-code-block copy: Enhance markdown rendering so each code block includes its own copy button that copies just that block's content.
+- [x] Sidebar drop-in/file upload for papers: Allow users to drag-and-drop or select PDF files from disk in the sidebar as the **primary** way to add papers to a session (no `papers/` folder required in the UI). Uploaded papers are saved under `uploads/`, indexed automatically, and are available for chat and mindmap generation in the current and future runs.
+- [x] Scroll-to-bottom button: Show a floating "scroll to latest" button when the user scrolls up in a long conversation; clicking jumps to the newest message and re-enables auto-scroll.
+- [x] New Chat: Add a "New Chat" button that clears the visible chat history and requests a new backend `session_id`, preserving the currently selected paper unless changed by the user.
+- [x] Per-code-block copy: Enhance markdown rendering so each code block includes its own copy button that copies just that block's content.
+- [x] Session save & reload with uploaded papers: Extend session persistence so a saved session can be restored later with its chat history, selected paper, and any uploaded/side-loaded papers (and their indices) that were part of that session.
+
+### Mindmap Semantics and Caching (Refinements)
+
+Completed tasks:
+
+- [x] Backend: Strengthen `MindmapService` prompts (both global and paper-scoped) so child nodes are required to be semantic refinements of their parents, and sibling nodes under the same parent must share a coherent, concept-focused theme (no generic structural labels).
+- [x] Backend: Implement in-memory caching for global mindmaps keyed by the current set of indexed papers and the active mindmap query, and persist the default (no-query) global graph to `data/mindmap/graph.json` with an accompanying index file for reuse across restarts.
+- [x] Backend: Implement in-memory caching for paper-scoped mindmaps keyed by `(paper_id, query)` so repeated requests for the same paper and instructions avoid redundant LLM calls.
 
 ## Remaining Optional Enhancements
 

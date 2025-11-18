@@ -1,6 +1,6 @@
 """Mindmap API endpoints."""
 
-from fastapi import APIRouter, Request, Query
+from fastapi import APIRouter, Request, Query, HTTPException
 from typing import Optional
 
 router = APIRouter()
@@ -11,6 +11,7 @@ async def get_mindmap_data(
     request: Request,
     paper_id: Optional[str] = Query(None, description="Optional paper ID to scope mindmap to specific paper"),
     query: Optional[str] = Query(None, description="Optional custom instructions for structuring the mindmap"),
+    session_id: Optional[str] = Query(None, description="Optional session ID to scope mindmap to that session's papers"),
 ):
     """Return the knowledge graph JSON for the mindmap visualization.
     
@@ -18,17 +19,23 @@ async def get_mindmap_data(
     Otherwise, returns the global tree of all papers.
     """
     app_state = request.app.state.app_state
-    
+
     if paper_id:
-        # Generate paper-specific tree (custom_query currently not applied;
-        # tree is derived from the persisted global mindmap).
-        graph = app_state.mindmap_service.generate_paper_tree(paper_id)
-    elif query:
-        # Custom global mindmap based on user instructions (ephemeral; not persisted)
-        graph = app_state.mindmap_service.generate_graph(custom_query=query)
+        # Generate a paper-specific mindmap directly from that paper's
+        # summary, using its canonical title as the root node. The
+        # optional custom query can further shape the structure.
+        graph = app_state.mindmap_service.generate_paper_tree(paper_id, custom_query=query)
+    elif session_id:
+        # Scope the mindmap to the papers attached to the given session.
+        conversation = app_state.conversation_manager.get_conversation(session_id)
+        if not conversation:
+            raise HTTPException(status_code=404, detail="Session not found")
+        paper_ids = conversation.paper_ids or []
+        graph = app_state.mindmap_service.generate_graph(custom_query=query, paper_ids=paper_ids)
     else:
-        # Load global tree (default persisted mindmap)
-        graph = app_state.mindmap_service.load_graph()
+        # For global mindmaps (with or without a custom query), use the
+        # generation pipeline across all papers.
+        graph = app_state.mindmap_service.generate_graph(custom_query=query)
     
     return graph
 
