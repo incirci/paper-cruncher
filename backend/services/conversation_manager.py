@@ -43,11 +43,12 @@ class ConversationManager:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
 
-            # Conversations table (no legacy schema; always create with full set)
+            # Conversations table with session_name
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS conversations (
                     session_id TEXT PRIMARY KEY,
+                    session_name TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     total_tokens INTEGER DEFAULT 0,
@@ -77,12 +78,14 @@ class ConversationManager:
         self,
         selected_paper_id: Optional[str] = None,
         paper_ids: Optional[list[str]] = None,
+        session_name: Optional[str] = None,
     ) -> str:
         """Create a new conversation session.
 
         Args:
             selected_paper_id: Optional currently selected paper ID
             paper_ids: Optional list of paper IDs associated with this session
+            session_name: Optional descriptive name for the session
         """
         session_id = str(uuid.uuid4())
         now = datetime.now().isoformat()
@@ -92,10 +95,10 @@ class ConversationManager:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                INSERT INTO conversations (session_id, created_at, updated_at, total_tokens, selected_paper_id, paper_ids)
-                VALUES (?, ?, ?, 0, ?, ?)
+                INSERT INTO conversations (session_id, session_name, created_at, updated_at, total_tokens, selected_paper_id, paper_ids)
+                VALUES (?, ?, ?, ?, 0, ?, ?)
             """,
-                (session_id, now, now, selected_paper_id, paper_ids_json),
+                (session_id, session_name, now, now, selected_paper_id, paper_ids_json),
             )
             conn.commit()
 
@@ -181,7 +184,7 @@ class ConversationManager:
             # Get conversation
             cursor.execute(
                 """
-                SELECT session_id, created_at, updated_at, total_tokens, selected_paper_id, paper_ids
+                SELECT session_id, session_name, created_at, updated_at, total_tokens, selected_paper_id, paper_ids
                 FROM conversations
                 WHERE session_id = ?
             """,
@@ -216,19 +219,20 @@ class ConversationManager:
                 )
 
             paper_ids: list[str] = []
-            if conv_row[5]:
+            if conv_row[6]:
                 try:
-                    paper_ids = json.loads(conv_row[5])
+                    paper_ids = json.loads(conv_row[6])
                 except Exception:
                     paper_ids = []
 
             return Conversation(
                 session_id=conv_row[0],
-                created_at=datetime.fromisoformat(conv_row[1]),
-                updated_at=datetime.fromisoformat(conv_row[2]),
-                total_tokens=conv_row[3],
+                session_name=conv_row[1],
+                created_at=datetime.fromisoformat(conv_row[2]),
+                updated_at=datetime.fromisoformat(conv_row[3]),
+                total_tokens=conv_row[4],
                 messages=messages,
-                selected_paper_id=conv_row[4],
+                selected_paper_id=conv_row[5],
                 paper_ids=paper_ids,
             )
 
@@ -276,7 +280,7 @@ class ConversationManager:
             cursor = conn.cursor()
 
             cursor.execute("""
-                SELECT c.session_id, c.created_at, c.updated_at, c.total_tokens, 
+                SELECT c.session_id, c.session_name, c.created_at, c.updated_at, c.total_tokens, 
                        c.selected_paper_id, c.paper_ids,
                        COUNT(m.id) as message_count
                 FROM conversations c
@@ -290,12 +294,13 @@ class ConversationManager:
                 sessions.append(
                     {
                         "session_id": row[0],
-                        "created_at": row[1],
-                        "updated_at": row[2],
-                        "total_tokens": row[3],
-                        "selected_paper_id": row[4],
-                        "paper_ids": row[5],
-                        "message_count": row[6],
+                        "session_name": row[1],
+                        "created_at": row[2],
+                        "updated_at": row[3],
+                        "total_tokens": row[4],
+                        "selected_paper_id": row[5],
+                        "paper_ids": row[6],
+                        "message_count": row[7],
                     }
                 )
 
@@ -322,6 +327,26 @@ class ConversationManager:
                 WHERE session_id = ?
                 """,
                 (selected_paper_id, paper_ids_json, now, session_id),
+            )
+            conn.commit()
+
+    def rename_session(self, session_id: str, session_name: str) -> None:
+        """Rename a session.
+        
+        Args:
+            session_id: Session ID to rename
+            session_name: New name for the session
+        """
+        now = datetime.now().isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE conversations
+                SET session_name = ?, updated_at = ?
+                WHERE session_id = ?
+                """,
+                (session_name, now, session_id),
             )
             conn.commit()
 

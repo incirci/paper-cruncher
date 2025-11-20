@@ -104,6 +104,24 @@ Completed tasks:
 - [x] Per-code-block copy: Enhance markdown rendering so each code block includes its own copy button that copies just that block's content.
 - [x] Session save & reload with uploaded papers: Extend session persistence so a saved session can be restored later with its chat history, selected paper, and any uploaded/side-loaded papers (and their indices) that were part of that session.
 
+### Session Management and UI Consistency
+
+Implement robust session management with a dedicated sessions sidebar and enforce "UI follows backend" principle throughout.
+
+Completed tasks:
+
+- [x] Sessions sidebar: Replace popup-based session management with a dedicated collapsible sidebar showing all sessions with metadata (message count, token usage, last updated).
+- [x] Session switching: Allow users to switch between sessions by clicking on them in the sidebar, loading full context from backend.
+- [x] Session deletion: Add per-session delete buttons that remove the session and create a new empty session automatically.
+- [x] UI-backend synchronization: Enforce "backend first, UI follows" pattern:
+  - All UI state changes (papers, sessions, selections) update backend first, then reload UI from backend response.
+  - Backend emits SSE events (session_created) to notify frontend of state changes.
+  - Frontend reloads sessions list and current session after backend operations.
+- [x] Session persistence: Messages persist when papers are added/removed (no automatic clearing of conversation history on paper context changes).
+- [x] Session visibility: Show all sessions in the list regardless of message count (sessions with papers but no messages are visible).
+- [x] Paper upload integration: Upload endpoint accepts session_id and merges papers into session without clearing messages.
+- [x] Session-scoped operations: Papers sidebar and mindmap correctly filter to show only current session's papers.
+
 ### Mindmap Semantics and Caching (Refinements)
 
 Completed tasks:
@@ -111,6 +129,14 @@ Completed tasks:
 - [x] Backend: Strengthen `MindmapService` prompts (both global and paper-scoped) so child nodes are required to be semantic refinements of their parents, and sibling nodes under the same parent must share a coherent, concept-focused theme (no generic structural labels).
 - [x] Backend: Implement in-memory caching for global mindmaps keyed by the current set of indexed papers and the active mindmap query, and persist the default (no-query) global graph to `data/mindmap/graph.json` with an accompanying index file for reuse across restarts.
 - [x] Backend: Implement in-memory caching for paper-scoped mindmaps keyed by `(paper_id, query)` so repeated requests for the same paper and instructions avoid redundant LLM calls.
+- [x] Backend: Implement per-session on-disk caching for session-scoped mindmaps:
+  - Cache location: `data/mindmap/sessions/<session_id>/<fingerprint>/<query_hash>.json`
+  - Cache key: session ID + paper set fingerprint + query hash
+  - Reuse cached graphs across restarts when same session, paper set, and query are requested.
+  - Session graphs persist independently from global graphs.
+- [x] Frontend: Always pass `session_id` to mindmap API for proper session scoping.
+- [x] Backend: Validate that requested `paper_id` belongs to `session_id` when both are provided (403 error if mismatch).
+- [x] Reset behavior: Clear mindmap in-memory caches and delete session graph files during global data reset.
 
 ## Remaining Optional Enhancements
 

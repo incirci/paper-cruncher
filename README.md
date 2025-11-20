@@ -23,19 +23,25 @@ pip install -r requirements.txt
 
 Place your PDF journal articles in the `papers/` folder.
 
-### 4. Run the Application
+### 3. Run the Application
+
+**Local:**
 
 ```bash
 python run.py
 ```
 
+**Docker Compose:**
+
+```bash
+# Create .env file with your API key first
+echo GOOGLE_API_KEY=YOUR_API_KEY > .env
+
+# Run
+docker compose up --build
+```
+
 The application will start at `http://localhost:8000`
-
-### 5. Open the Web Interface
-
-Open your browser to `http://localhost:8000`
-
-The frontend is automatically served by FastAPI.
 
 ## Docker
 
@@ -80,22 +86,65 @@ The app will be available at `http://localhost:8000`.
 
 ## How to Use
 
-### Indexing Papers
+### Adding Papers
 
-1. **Add PDFs**: Place PDF journal articles in the `papers/` folder
-2. **Index**: Click the "📚 Index Papers" button in the sidebar
-   - This processes all PDFs, extracts text, and creates vector embeddings
-   - Only needs to be done once, or when adding new papers
-   - Papers persist across application restarts
+**Primary Method - Upload via Sidebar:**
+
+1. Click the "📎 Upload Papers" button in the sidebar
+2. Select one or more PDF files from your computer
+3. Papers are automatically:
+   - Saved to `data/uploads/` directory
+   - Indexed into the vector database
+   - Available immediately for chat and mindmap
+4. Uploaded papers persist across restarts
+
+**Alternative - Drop PDFs in papers/ folder:**
+
+- Place PDFs in `papers/` folder and click "📚 Index Papers" button
+- This method is maintained for backward compatibility
+
+### Managing Sessions
+
+**Sessions Sidebar:**
+
+1. Click the "💬 Sessions" button to open the sessions sidebar
+2. View all your saved sessions with:
+   - Session ID (truncated)
+   - Message count
+   - Token usage
+   - Last updated timestamp
+3. Click any session to switch to it (loads full chat history and papers)
+4. Delete sessions using the ✕ button next to each session
+5. Sessions are sorted by most recent activity
+
+**New Session:**
+
+1. Click "New Session" button in the header
+2. Creates a fresh conversation with new session ID
+3. Preserves currently selected papers unless you change them
+4. Previous session is automatically saved to history
+
+**Session Behavior:**
+
+- All sessions are visible in the sidebar
+- Adding/removing papers does NOT clear conversation history
+- Each session maintains independent:
+  - Chat messages
+  - Paper context (selected papers)
+  - Token usage tracking
 
 ### Asking Questions
 
-1. **Global Mode**: Ask questions about all papers
+1. **Session-Scoped**: Questions are always within current session context
+   - AI searches only papers in the current session
+   - Each session has its own paper context and conversation history
+   
+2. **Global Mode** (no paper selected): Ask questions about all papers in session
    - Type your question in the input box at the bottom
-   - AI will search across all indexed papers
+   - AI will search across all papers in the current session
    - Example: "What are the common themes across these papers?"
 
-2. **Paper-Specific Mode**: Focus on a single paper
+3. **Paper-Specific Mode**: Focus on a single paper
    - Click any paper in the sidebar to select it (blue highlight)
    - Ask questions scoped to that paper only
    - Example: "What methodology was used in this study?"
@@ -104,20 +153,27 @@ The app will be available at `http://localhost:8000`.
 ### Viewing the Knowledge Graph
 
 1. Click the "🧠 View Mindmap" button in the sidebar
-2. **Global Mindmap**: Shows hierarchical tree of topics across all papers
+2. **Session-Scoped Mindmap**: Shows only papers from current session
    - Papers organized by themes and subtopics
    - Click nodes to expand/collapse
+   - Validates that selected paper (if any) belongs to session
 3. **Paper-Specific Mindmap**: When a paper is selected
    - Shows the selected paper as root
    - Displays main topics and subtopics from that paper
    - Use "Expand All" and "Collapse All" buttons to control view
 
 4. **Custom Mindmaps (User Instructions)**
-   - Next to "🧠 View Mindmap" there is a small ✏️ icon.
-   - Clicking it opens a prompt where you can enter **mindmap instructions** (a free-text query).
+   - Click the ✏️ icon next to "🧠 View Mindmap"
+   - Enter **mindmap instructions** (free-text query)
    - Example: "Create only two top-level themes, one for physical fatigue and one for stress."
-   - When no paper is selected, these instructions influence how the **global** mindmap is generated for that view (the stored default mindmap is not overwritten).
-   - Structural guarantees still hold: valid JSON, canonical paper titles as leaf nodes, and configured depth/size limits.
+   - Instructions influence hierarchy organization while maintaining structure
+   - Structural guarantees: valid JSON, canonical paper titles as leaves, depth limits
+
+5. **Mindmap Caching**
+   - Session mindmaps are cached on disk per session
+   - Reusing same session + query = instant load (no regeneration)
+   - Cache survives app restarts
+   - Cache location: `data/mindmap/sessions/<session_id>/`
 
    **Example instructions to try:**
 
@@ -127,14 +183,31 @@ The app will be available at `http://localhost:8000`.
 
 ### Features
 
+- **Session Management**: Independent chat sessions with dedicated sidebar
+  - View all sessions with metadata (messages, tokens, timestamps)
+  - Switch between sessions seamlessly
+  - Session-scoped paper context
+  - Messages persist when papers are added/removed
+- **Paper Upload**: Drag-and-drop or select PDFs directly in sidebar
+  - Auto-indexing on upload
+  - Papers saved to persistent `data/uploads/` directory
+  - Session-aware uploads (merge into current session)
 - **Conversation History**: Chat maintains context across messages
 - **Source Citations**: AI references which papers it's using
 - **Streaming Responses**: See answers as they're generated
 - **Markdown Formatting**: Responses include tables, lists, and code blocks
-- **Token Tracking**: Monitor API usage in real-time
-- **Canonical Paper Titles**: Each paper has a consistent canonical title (e.g. `filename (inferred title)`), used in the sidebar, vector DB, and mindmap leaves.
-- **Richer Mindmaps**: Mindmaps are based on keyword-biased micro-summaries per paper (not just first chunks) and post-processed to normalize and de-duplicate similar concept nodes.
-- **Custom Mindmaps**: User-provided instructions can steer how the global mindmap is organized without changing core constraints.
+- **Token Tracking**: Monitor API usage in real-time per session
+- **Canonical Paper Titles**: Consistent titles across UI, DB, and mindmaps
+- **Smart Mindmaps**: 
+  - Session-scoped knowledge graphs
+  - Keyword-biased micro-summaries
+  - Normalized and deduplicated concept nodes
+  - Per-session disk caching for instant reuse
+  - Custom instructions for alternative views
+- **UI Consistency**: "Backend first, UI follows" architecture
+  - All state changes sync through backend
+  - Real-time session updates via SSE events
+  - No UI drift from backend state
 
 ## Project Structure
 
@@ -142,27 +215,34 @@ The app will be available at `http://localhost:8000`.
 cruncher/
 ├── backend/
 │   ├── api/              # FastAPI endpoints
-│   │   ├── chat.py       # Chat endpoints
-│   │   ├── papers.py     # Paper management
+│   │   ├── chat.py       # Chat & session endpoints
+│   │   ├── papers.py     # Paper upload & management
 │   │   ├── tokens.py     # Token tracking
 │   │   ├── agent.py      # Agent config
+│   │   ├── mindmap.py    # Mindmap endpoints
 │   │   └── config.py     # App config
 │   ├── core/             # Configuration
 │   │   └── config.py     # Settings loader
 │   ├── services/         # Business logic
 │   │   ├── ai_agent.py           # Gemini integration
-│   │   ├── conversation_manager.py
-│   │   ├── paper_manager.py
+│   │   ├── conversation_manager.py  # Session & message management
+│   │   ├── paper_manager.py      # Paper metadata
 │   │   ├── pdf_processor.py      # PDF extraction
 │   │   ├── token_tracker.py      # Token monitoring
-│   │   └── vector_db.py          # ChromaDB
+│   │   ├── vector_db.py          # ChromaDB
+│   │   └── mindmap_service.py    # Knowledge graph generation
 │   ├── models/           # Data models
 │   │   └── schemas.py    # Pydantic schemas
 │   └── main.py           # FastAPI app
 ├── frontend/
-│   └── index.html        # Web UI
-├── data/                 # Databases (auto-created)
-├── papers/               # PDF storage
+│   └── index.html        # Web UI (sessions sidebar, papers sidebar, chat)
+├── data/                 # Runtime data (auto-created)
+│   ├── uploads/          # Uploaded PDFs
+│   ├── vectordb/         # ChromaDB storage
+│   └── mindmap/          # Mindmap cache
+│       ├── sessions/     # Per-session graphs
+│       └── graph.json    # Global graph
+├── papers/               # Optional PDF storage (legacy)
 ├── config.toml           # App configuration
 ├── .env                  # API keys
 └── run.py                # Run script
@@ -170,25 +250,33 @@ cruncher/
 
 ## API Endpoints
 
-### Chat
+### Chat & Sessions
 
-- `POST /api/chat` - Send message to AI agent
+- `POST /api/chat` - Send message to AI agent (with optional session_id, paper_id)
+- `GET /api/chat/sessions` - List all sessions with metadata
+- `GET /api/chat/session/{session_id}` - Get session details
+- `POST /api/chat/session` - Create new session
+- `DELETE /api/chat/session/{session_id}` - Delete session
+- `PUT /api/chat/session/{session_id}/context` - Update session papers
 - `GET /api/chat/history/{session_id}` - Get conversation history
-- `DELETE /api/chat/history/{session_id}` - Clear conversation
-- `GET /api/chat/sessions` - List all sessions
+- `DELETE /api/chat/history/{session_id}` - Clear conversation (deprecated)
+- `GET /api/chat/debug/sessions` - Debug endpoint for all sessions
 
 ### Papers
 
-- `GET /api/papers` - List all papers
+- `GET /api/papers` - List all papers (or filtered by session)
 - `GET /api/papers/{paper_id}` - Get paper details
-- `POST /api/papers/reindex` - Reindex all papers
+- `POST /api/papers/upload` - Upload PDFs (with optional session_id)
+- `POST /api/papers/reindex` - Reindex all papers from papers/ folder
 
 ### Mindmap
 
-- `GET /api/mindmap` - Get global knowledge graph (all papers)
-- `GET /api/mindmap?paper_id=<id>` - Get paper-specific topic tree
+- `GET /api/mindmap` - Get knowledge graph
+  - Optional params: `session_id`, `paper_id`, `query`
+  - Session-scoped: only shows papers from session
+  - Validates paper belongs to session if both provided
 - `POST /api/mindmap/rebuild` - Regenerate global knowledge graph
-- `GET /mindmap` - Interactive D3.js mindmap visualization
+- `GET /mindmap` - Interactive D3.js mindmap visualization page
 
 ### Tokens
 
@@ -201,10 +289,18 @@ cruncher/
 - `GET /api/agent/profile` - Get agent configuration
 - `GET /api/config` - Get app configuration
 
+### Admin
+
+- `POST /api/admin/reset` - Reset all data (dangerous: clears everything)
+  - Deletes data/ directory (vector DB, conversations, uploads)
+  - Clears in-memory caches (including mindmap caches)
+  - Resets paper manager, token tracker, conversation manager
+
 ### Health
 
-- `GET /` - Root endpoint
-- `GET /health` - Health check
+- `GET /` - Root endpoint (serves frontend)
+- `GET /api` - API root
+- Health check available via any endpoint
 
 ## Configuration
 
@@ -220,18 +316,27 @@ Edit `config.toml` to customize:
 ✅ PDF processing with metadata extraction  
 ✅ Semantic search using ChromaDB  
 ✅ RAG pipeline with Google Gemini 2.5 Pro  
+✅ **Session management with dedicated sidebar**  
+✅ **Independent session contexts (papers + chat + tokens)**  
+✅ **Messages persist when papers change**  
 ✅ Conversation history management  
-✅ Token usage tracking and monitoring  
+✅ Token usage tracking per session  
+✅ **Paper upload via sidebar with auto-indexing**  
+✅ **Session-scoped paper context**  
 ✅ Web-based chat interface  
-✅ Collapsible sidebar with papers list  
+✅ Collapsible sidebars (papers & sessions)  
 ✅ Multi-paper query support  
 ✅ Source citation in responses  
-✅ Paper-specific context selection (click to scope chat and mindmap)  
+✅ Paper-specific context selection  
+✅ **Session-scoped mindmaps with validation**  
+✅ **Per-session disk caching for mindmaps**  
 ✅ AI-generated knowledge graphs (global and paper-specific)  
 ✅ Interactive D3.js mindmap visualization (NotebookLM-style)  
 ✅ Canonical titles and concept-focused mindmap structure  
-✅ Custom mindmap instructions for alternative global views  
+✅ Custom mindmap instructions for alternative views  
 ✅ Streaming responses with markdown formatting  
+✅ **"UI follows backend" architecture for consistency**  
+✅ **Real-time session updates via SSE events**  
 
 ## API Documentation
 

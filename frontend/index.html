@@ -625,6 +625,7 @@
         let sessionId = null;
         let isLoading = false;
         let isIndexing = false;
+        let isStreaming = false;
         let selectedPaperId = null; // Track selected paper ID
         let mindmapQuery = '';
         let lastMindmapQuery = '';
@@ -960,6 +961,7 @@
 
                 const es = new EventSource(sseUrl);
                 let fullText = '';
+                isStreaming = true;
 
                 es.onmessage = async (evt) => {
                     try {
@@ -979,7 +981,7 @@
                             // before sending the first message, currentPaperIds
                             // already reflects those, so the very first
                             // response will be correctly scoped.
-                            await saveSessionContext();
+                            await saveSessionContext({ reload: false });
                             return;
                         }
                         if (data.type === 'session_created') {
@@ -1029,9 +1031,10 @@
                             }
 
                             // Ensure latest paper context is persisted with the session
-                            await saveSessionContext();
+                            await saveSessionContext({ reload: false });
                             
                             es.close();
+                            isStreaming = false;
                             // Remove streaming IDs
                             messageDiv.removeAttribute('id');
                             contentDiv.removeAttribute('id');
@@ -1047,6 +1050,7 @@
                             errDiv.textContent = 'Warning: ' + msg;
                             messageDiv.appendChild(errDiv);
                             es.close();
+                            isStreaming = false;
                             return;
                         }
                     } catch (e) {
@@ -1057,6 +1061,7 @@
                 es.onerror = () => {
                     // Stream ended or failed; UI already shows any error
                     es.close();
+                    isStreaming = false;
                 };
 
             } catch (error) {
@@ -1071,6 +1076,7 @@
                 // Remove streaming message if it exists
                 const streamingMsg = document.getElementById('streaming-message');
                 if (streamingMsg) streamingMsg.remove();
+                isStreaming = false;
             } finally {
                 isLoading = false;
                 document.getElementById('sendButton').disabled = false;
@@ -1259,10 +1265,15 @@
                         minute: '2-digit' 
                     });
                     
+                    const displayName = s.session_name || `Session ${shortId}...`;
+                    
                     return `
                         <div class="session-item ${isActive ? 'active' : ''}" onclick="switchToSession('${s.session_id}')">
                             <div class="session-info">
-                                <span class="session-id-label">${shortId}...</span>
+                                <span class="session-id-label" 
+                                      title="Click to rename" 
+                                      ondblclick="event.stopPropagation(); renameSession('${s.session_id}', this)"
+                                      style="cursor: pointer; font-weight: 500; font-size: 13px; color: #333; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block;">${displayName}</span>
                                 <button 
                                     class="session-delete-btn" 
                                     onclick="event.stopPropagation(); deleteSessionById('${s.session_id}')"
@@ -1308,6 +1319,33 @@
             }
         }
 
+        async function renameSession(sessionIdToRename, element) {
+            const currentName = element.textContent.trim();
+            const newName = window.prompt('Enter new session name:', currentName);
+            
+            if (newName === null || newName.trim() === '') {
+                return; // User cancelled or empty name
+            }
+            
+            try {
+                const res = await fetch(`${API_URL}/chat/session/${sessionIdToRename}/name`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_name: newName.trim() }),
+                });
+                
+                if (res.ok) {
+                    // Refresh the sessions list to show updated name
+                    await loadSessionsList();
+                } else {
+                    alert('Failed to rename session');
+                }
+            } catch (e) {
+                console.error('Failed to rename session', e);
+                alert('Error renaming session');
+            }
+        }
+
         async function loadSession(id) {
             try {
                 const res = await fetch(`${API_URL}/chat/session/${id}`);
@@ -1350,6 +1388,11 @@
                 }
 
                 await updateTokenStats();
+
+                // Ensure we are scrolled to the latest message after reload
+                try {
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                } catch {}
             } catch (err) {
                 console.error('Failed to load session', err);
                 alert('Error loading session');
@@ -1357,10 +1400,36 @@
         }
 
         async function clearChat() {
-            const chatContainer = document.getElementById('chatContainer');
-            chatContainer.innerHTML = '<div class="empty-state">Ask a question about the papers</div>';
-            autoScroll = true;
-            document.getElementById('tokenStats').textContent = 'Tokens: 0';
+            if (!sessionId) {
+                // No session, just clear UI
+                const chatContainer = document.getElementById('chatContainer');
+                chatContainer.innerHTML = '<div class="empty-state">Ask a question about the papers</div>';
+                autoScroll = true;
+                document.getElementById('tokenStats').textContent = 'Tokens: 0';
+                return;
+            }
+
+            try {
+                // Clear messages from backend
+                const res = await fetch(`${API_URL}/chat/session/${sessionId}/clear`, {
+                    method: 'POST',
+                });
+                
+                if (!res.ok) {
+                    console.error('Failed to clear chat history');
+                    return;
+                }
+                
+                // Clear UI
+                const chatContainer = document.getElementById('chatContainer');
+                chatContainer.innerHTML = '<div class="empty-state">Ask a question about the papers</div>';
+                autoScroll = true;
+                
+                // Update token stats
+                await updateTokenStats();
+            } catch (e) {
+                console.error('Error clearing chat', e);
+            }
         }
 
         async function newSession() {
@@ -1543,7 +1612,7 @@
             labelEl.textContent = `Session: ${shortId}`;
         }
 
-        async function saveSessionContext() {
+        async function saveSessionContext(opts = {}) {
             if (!sessionId) return;
             try {
                 const res = await fetch(`${API_URL}/chat/session/${sessionId}/context`, {
@@ -1560,7 +1629,10 @@
                     // backend so the sidebar and local state always
                     // reflect the canonical session context (paper_ids
                     // and selected_paper_id).
-                    await loadSession(sessionId);
+                    const shouldReload = opts.reload !== false;
+                    if (shouldReload && !isStreaming) {
+                        await loadSession(sessionId);
+                    }
                 }
             } catch (err) {
                 console.error('Failed to save session context', err);

@@ -56,6 +56,7 @@ class Conversation(BaseModel):
     """Conversation session."""
 
     session_id: str
+    session_name: Optional[str] = None
     messages: List[Message] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)

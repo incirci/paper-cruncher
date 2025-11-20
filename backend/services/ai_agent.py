@@ -109,6 +109,7 @@ class AIAgent:
         relevant_chunks = self._execute_worker_commands(
             orchestration["commands"],
             allowed_paper_ids=allowed_paper_ids,
+            user_query=query,
         )
         context = self._build_context(relevant_chunks, include_overview=True)
         source_papers = self._extract_source_papers(relevant_chunks)
@@ -237,6 +238,7 @@ Formatting Guidelines:
         relevant_chunks = self._execute_worker_commands(
             orchestration["commands"],
             allowed_paper_ids=allowed_paper_ids,
+            user_query=query,
         )
         if not relevant_chunks:
             raise RuntimeError(
@@ -427,6 +429,7 @@ For PAPERS, use: ALL or specific filenames separated by commas
         self,
         commands: list,
         allowed_paper_ids: Optional[List[str]] = None,
+        user_query: Optional[str] = None,
     ) -> List[dict]:
         """
         Worker Agent: Executes specific retrieval commands from orchestrator.
@@ -491,15 +494,71 @@ For PAPERS, use: ALL or specific filenames separated by commas
                 continue
             
             if action == 'fetch_summary':
-                for paper_id in paper_ids:
-                    chunks = self.vector_db.get_paper_chunks(paper_id)[:2]
-                    for chunk in chunks:
-                        if chunk['id'] not in chunk_ids_seen:
-                            all_chunks.append(chunk)
-                            chunk_ids_seen.add(chunk['id'])
+                # Provide a broader overview per paper: include beginning, middle, end
+                # and a few top semantic matches for the user's query (if available).
+                max_per_paper = max(5, settings.chunking.max_chunks_per_query)
+                for pid in paper_ids:
+                    all_for_paper = self.vector_db.get_paper_chunks(pid)
+                    # Sort deterministically by page number then by chunk index
+                    try:
+                        all_for_paper.sort(
+                            key=lambda c: (
+                                (c.get("metadata", {}) or {}).get("page_number") or 0,
+                                (c.get("metadata", {}) or {}).get("chunk_index") or 0,
+                            )
+                        )
+                    except Exception:
+                        pass
+
+                    picked: List[dict] = []
+                    n = len(all_for_paper)
+                    if n > 0:
+                        # Head
+                        picked.append(all_for_paper[0])
+                        if n > 1:
+                            picked.append(all_for_paper[min(1, n - 1)])
+                        # Middle
+                        mid_idx = n // 2
+                        if 0 <= mid_idx < n:
+                            picked.append(all_for_paper[mid_idx])
+                        # Tail
+                        picked.append(all_for_paper[max(n - 2, 0)])
+                        picked.append(all_for_paper[max(n - 1, 0)])
+
+                    # Also pull a few top semantic matches for the user's question
+                    if user_query:
+                        try:
+                            q_hits = self.vector_db.search(
+                                query=user_query,
+                                n_results=min(max_per_paper, 8),
+                                paper_ids=[pid],
+                            )
+                        except Exception:
+                            q_hits = []
+                        for ch in q_hits:
+                            picked.append(ch)
+
+                    # Deduplicate and cap per paper
+                    unique = []
+                    seen_local = set()
+                    for ch in picked:
+                        cid = ch.get("id")
+                        if cid and cid not in seen_local:
+                            unique.append(ch)
+                            seen_local.add(cid)
+                    for ch in unique[:max_per_paper]:
+                        if ch.get("id") not in chunk_ids_seen:
+                            all_chunks.append(ch)
+                            chunk_ids_seen.add(ch.get("id"))
             
             elif action == 'fetch_details':
-                search_query = focus if focus else "detailed content"
+                # Blend the user's question with orchestrator focus to get richer matches
+                if user_query and focus:
+                    search_query = f"{user_query}\nFocus: {focus}"
+                elif user_query:
+                    search_query = user_query
+                else:
+                    search_query = focus if focus else "detailed content"
                 chunks = self.vector_db.search(
                     query=search_query,
                     n_results=settings.chunking.max_chunks_per_query * 2,
@@ -511,7 +570,9 @@ For PAPERS, use: ALL or specific filenames separated by commas
                         chunk_ids_seen.add(chunk['id'])
             
             elif action == 'fetch_comparison':
-                search_query = focus if focus else "methodology results"
+                # Encourage comparative retrieval across the scoped paper set
+                base = focus if focus else "methodology results comparison"
+                search_query = f"{user_query}\nCompare: {base}" if user_query else base
                 chunks = self.vector_db.search(
                     query=search_query,
                     n_results=min(len(paper_ids) * 3, 20),

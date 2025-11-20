@@ -489,6 +489,24 @@ async def delete_history(request: Request, session_id: str):
     return {"message": "Conversation deleted successfully"}
 
 
+@router.post("/chat/session/{session_id}/clear")
+async def clear_session_messages(request: Request, session_id: str):
+    """Clear all messages from a session while keeping the session and its paper context.
+    
+    This is useful for starting a fresh conversation within the same session
+    without losing the paper context.
+    """
+    app_state = request.app.state.app_state
+
+    if not app_state.conversation_manager.session_exists(session_id):
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    app_state.conversation_manager.delete_messages(session_id)
+    app_state.token_tracker.delete_session_usage(session_id)
+
+    return {"message": "Messages cleared successfully"}
+
+
 @router.get("/chat/sessions")
 async def list_sessions(request: Request):
     """List all conversation sessions."""
@@ -509,6 +527,28 @@ async def create_session(request: Request):
     app_state = request.app.state.app_state
     session_id = app_state.conversation_manager.create_session()
     return {"session_id": session_id}
+
+
+@router.patch("/chat/session/{session_id}/name")
+async def rename_session(request: Request, session_id: str, payload: dict = Body(...)):
+    """Rename a chat session.
+    
+    Args:
+        session_id: Session ID to rename
+        payload: JSON body with 'session_name' field
+    """
+    app_state = request.app.state.app_state
+
+    if not app_state.conversation_manager.session_exists(session_id):
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    session_name = payload.get("session_name", "").strip()
+    if not session_name:
+        raise HTTPException(status_code=400, detail="Session name cannot be empty")
+
+    app_state.conversation_manager.rename_session(session_id, session_name)
+
+    return {"message": "Session renamed", "session_name": session_name}
 
 
 @router.delete("/chat/session/{session_id}")

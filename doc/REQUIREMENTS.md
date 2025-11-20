@@ -41,6 +41,33 @@ Web application
   - Keep the currently selected paper context (if any) unless the user explicitly changes it
   - When the session is saved, also persist any **uploaded/side-loaded papers** that were added during that session so the same logical session (chat history + paper set) can be reloaded later.
 
+#### Sessions Sidebar
+
+- Provide a dedicated **Sessions** sidebar (separate from papers sidebar) for session management:
+  - Display all sessions with metadata: session ID (truncated), message count, token usage, last updated timestamp
+  - Show sessions sorted by most recent activity
+  - Visual indication of currently active session
+  - Click to switch between sessions (loads full chat history and paper context from backend)
+  - Per-session delete button to remove sessions
+  - Collapsible sidebar to save screen space
+- Session list updates automatically:
+  - When new session is created (via SSE event from backend)
+  - After switching sessions
+  - After deleting a session
+- **UI follows backend** principle:
+  - All UI operations (switch session, delete session, update papers) call backend first
+  - UI reloads state from backend response after every operation
+  - Frontend never updates local state before confirming backend change
+  - Empty paper arrays (`[]`) show no papers in UI (not "all papers")
+- Show all sessions regardless of message count (sessions with papers but no messages are visible)
+
+#### Paper Context Persistence
+
+- Adding or removing papers from a session does **not** clear conversation history
+- Messages persist when paper context changes
+- Conversation history remains intact across paper set modifications
+- Session state (messages, papers, tokens) is independent
+
 ### AI Agent Requirements
 
 #### Context Awareness
@@ -167,7 +194,14 @@ Internally, the pipeline is:
   - Show topics, subtopics, and sub-subtopics covered in that specific paper
   - Structure: Paper Name (root) > Main Topics > Subtopics > Sub-subtopics
   
-- **Global mindmap**: When no paper is selected:
+- **Session-scoped mindmap**: When viewing mindmap from a session:
+  - Mindmap shows only papers from that session
+  - Backend validates that `paper_id` (if provided) belongs to `session_id`
+  - Cached per session on disk for reuse across restarts
+  - Cache key: session ID + paper set fingerprint + query hash
+  - Cache location: `data/mindmap/sessions/<session_id>/<fingerprint>/<query_hash>.json`
+  
+- **Global mindmap**: When no session or paper is selected:
   - Show the full cross-paper knowledge graph (all papers organized by themes)
   - Support user-provided **mindmap queries** that influence how the hierarchy is organized while still respecting all structural constraints (valid JSON, canonical titles as leaf nodes, depth limits, semantic parent–child relationships)
 
@@ -194,6 +228,14 @@ Internally, the pipeline is:
 - **Global mindmap caching**:
   - Cache and reuse global mindmaps based on the current set of indexed papers and the active mindmap query
   - Persist the default (no custom query) global mindmap to `data/mindmap/graph.json` and track fingerprints in an index file so matching configurations can reuse the existing graph across restarts
+
+- **Session-scoped mindmap caching**:
+  - Cache session graphs on disk at `data/mindmap/sessions/<session_id>/<fingerprint>/<query_hash>.json`
+  - Fingerprint: stable hash of session's paper IDs
+  - Query hash: SHA1 hash of trimmed query string
+  - Reuse cached graphs across app restarts when same session, paper set, and query are requested
+  - Session graphs persist independently from global graphs
+  - Reset operation clears all session graph files and in-memory caches
 
 ### Visualization
 
