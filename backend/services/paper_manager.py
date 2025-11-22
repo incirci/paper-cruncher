@@ -44,6 +44,14 @@ class PaperManager:
                     for paper_data in data:
                         metadata = PaperMetadata(**paper_data)
 
+                        # Check if file exists in local uploads dir (handles Docker vs Local path mismatch)
+                        if metadata.filename:
+                            local_path = self.uploads_dir / metadata.filename
+                            if local_path.exists():
+                                metadata.filepath = str(local_path)
+                                self.papers[metadata.id] = metadata
+                                continue
+
                         file_path = getattr(metadata, "filepath", None)
                         if not file_path:
                             continue

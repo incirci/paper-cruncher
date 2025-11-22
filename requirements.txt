@@ -19,7 +19,6 @@ aiosqlite
 
 # Configuration
 python-dotenv
-toml
 
 # Utilities
 pydantic

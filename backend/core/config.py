@@ -3,8 +3,8 @@
 import os
 from pathlib import Path
 from typing import Optional
+import tomllib
 
-import toml
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
@@ -123,7 +123,8 @@ class Settings(BaseModel):
 
         # Load TOML configuration
         if config_path.exists():
-            config_data = toml.load(config_path)
+            with open(config_path, "rb") as f:
+                config_data = tomllib.load(f)
         else:
             config_data = {}
 
