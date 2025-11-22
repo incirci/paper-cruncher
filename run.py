@@ -15,6 +15,7 @@ if __name__ == "__main__":
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
+
     uvicorn.run(
         "backend.main:app",
         host=settings.app.host,
@@ -22,3 +23,4 @@ if __name__ == "__main__":
         reload=True,
         timeout_keep_alive=120,  # Increase timeout for streaming
     )
+
