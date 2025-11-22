@@ -270,10 +270,3 @@ class PDFProcessor:
 
         return hasher.hexdigest()[:16]
 
-    def scan_papers_folder(self, folder_path: Path) -> List[Path]:
-        """Scan folder for PDF files."""
-        if not folder_path.exists():
-            folder_path.mkdir(parents=True, exist_ok=True)
-            return []
-
-        return list(folder_path.glob("*.pdf"))

@@ -59,15 +59,12 @@ async def chat(request: Request, chat_request: ChatRequest):
             detail="No papers are registered for this session yet. Add papers to the session before asking questions.",
         )
 
-    try:
-        logger.info(
-            "CHAT /chat session_id=%s allowed_paper_ids=%s selected_paper_id=%s",
-            session_id,
-            allowed_paper_ids,
-            selected_paper_id,
-        )
-    except Exception:
-        pass
+    logger.info(
+        "CHAT /chat session_id=%s allowed_paper_ids=%s selected_paper_id=%s",
+        session_id,
+        allowed_paper_ids,
+        selected_paper_id,
+    )
 
     # Visualization branch
     if request.app.state.settings.image.enabled and app_state.ai_agent.is_visualization_request(chat_request.message):
@@ -192,15 +189,12 @@ async def chat_stream(
             },
         )
 
-    try:
-        logger.info(
-            "CHAT /chat/stream (POST) session_id=%s allowed_paper_ids=%s selected_paper_id=%s",
-            session_id,
-            allowed_paper_ids,
-            selected_paper_id,
-        )
-    except Exception:
-        pass
+    logger.info(
+        "CHAT /chat/stream (POST) session_id=%s allowed_paper_ids=%s selected_paper_id=%s",
+        session_id,
+        allowed_paper_ids,
+        selected_paper_id,
+    )
 
     async def generate_stream():
         """Generate server-sent events stream."""
@@ -567,53 +561,6 @@ async def delete_session(request: Request, session_id: str):
     app_state.token_tracker.delete_session_usage(session_id)
 
     return {"message": "Session deleted"}
-
-
-@router.get("/chat/debug/sessions")
-async def debug_sessions(request: Request):
-    """Debug endpoint: return all sessions with paper context and last source_papers.
-
-    This is intended for development/debugging only. It surfaces, for each session:
-    - session_id
-    - paper_ids
-    - selected_paper_id
-    - last assistant message's source_papers (if any)
-    """
-    app_state = request.app.state.app_state
-
-    # Base session info
-    sessions = app_state.conversation_manager.list_sessions()
-    debug_payload: list[dict] = []
-
-    for sess in sessions:
-        # list_sessions currently returns plain dicts
-        session_id = sess.get("session_id") if isinstance(sess, dict) else getattr(sess, "session_id", None)
-        if not session_id:
-            continue
-
-        conv = app_state.conversation_manager.get_conversation(session_id)
-        paper_ids = conv.paper_ids if conv else []
-        selected_paper_id = conv.selected_paper_id if conv else None
-
-        # Find last assistant message and its source_papers
-        history = app_state.conversation_manager.get_conversation_history(session_id)
-        last_source_papers: list[str] = []
-        if history:
-            for msg in reversed(history):
-                if getattr(msg, "role", None) == MessageRole.ASSISTANT:
-                    last_source_papers = getattr(msg, "source_papers", []) or []
-                    break
-
-        debug_payload.append(
-            {
-                "session_id": session_id,
-                "paper_ids": paper_ids or [],
-                "selected_paper_id": selected_paper_id,
-                "last_source_papers": last_source_papers,
-            }
-        )
-
-    return {"sessions": debug_payload}
 
 
 @router.post("/chat/session/{session_id}/context")

@@ -367,26 +367,6 @@ class MindmapService:
 
         return tree
     
-    def _find_paper_topics(self, node: Dict[str, Any], paper_name: str, path: List[str], result: List[Dict[str, Any]]) -> None:
-        """Recursively find all paths leading to a specific paper."""
-        # If this node is the paper we're looking for
-        if node.get('name') == paper_name and not node.get('children'):
-            # Build topic structure from the path, skipping the root node (first element)
-            if len(path) > 1:
-                # Skip the first element (root node) and build from remaining path
-                filtered_path = path[1:]
-                
-                # Convert path to nested structure
-                topic = {"name": filtered_path[-1], "children": []}
-                for parent_name in reversed(filtered_path[:-1]):
-                    topic = {"name": parent_name, "children": [topic]}
-                result.append(topic)
-            return
-        
-        # Recursively search children
-        for child in node.get('children', []):
-            self._find_paper_topics(child, paper_name, path + [node['name']], result)
-
     def save_graph(self, tree: Dict[str, Any]) -> Path:
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         with open(self.graph_file, "w", encoding="utf-8") as f:

@@ -200,8 +200,5 @@ class PaperManager:
         stale in-memory state.
         """
         self.papers.clear()
-        try:
-            if self.metadata_file.exists():
-                self.metadata_file.unlink()
-        except Exception as e:  # pragma: no cover - defensive
-            print(f"Error deleting papers metadata file: {e}")
+        if self.metadata_file.exists():
+            self.metadata_file.unlink()

@@ -108,24 +108,18 @@ async def reset_all_data():
     data_root = settings.get_vector_db_path().parent
 
     # Wipe on-disk data first.
-    try:
-      if data_root.exists():
+    if data_root.exists():
         rmtree(data_root)
-    except Exception as exc:  # pragma: no cover - defensive
-      print(f"Failed to delete data directory {data_root}: {exc}")
 
     # Also clear any in-memory / DB-backed conversation, token, and
     # paper state so list_sessions, debug endpoints, and /papers
     # return a clean slate immediately after reset.
-    try:
-      app_state: AppState = app.state.app_state
-      app_state.conversation_manager.reset_all()
-      app_state.token_tracker.reset_all()
-      app_state.paper_manager.reset_all()
-      app_state.mindmap_service.reset_all()
-      app_state.vector_db.reset()
-    except Exception as exc:  # pragma: no cover - defensive
-      print(f"Failed to reset in-memory state: {exc}")
+    app_state: AppState = app.state.app_state
+    app_state.conversation_manager.reset_all()
+    app_state.token_tracker.reset_all()
+    app_state.paper_manager.reset_all()
+    app_state.mindmap_service.reset_all()
+    app_state.vector_db.reset()
 
     return {"message": f"All data reset: removed directory {data_root} and cleared conversations/tokens"}
 

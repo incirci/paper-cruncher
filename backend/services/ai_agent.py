@@ -129,12 +129,14 @@ COMMAND 1:
 ACTION: fetch_summary
 PAPERS: ALL
 FOCUS: main topics
+DENSITY: normal
 
 STRATEGY: consolidate_all
 REASONING: Need overview of all papers
 
 Valid actions: fetch_summary (overview), fetch_details (specific search), fetch_comparison (compare papers)
 For PAPERS, use: ALL or specific filenames separated by commas
+For DENSITY, use: normal (default, 5 chunks) or high (deep dive, 20 chunks)
 '''
         
         try:
@@ -190,6 +192,8 @@ For PAPERS, use: ALL or specific filenames separated by commas
                     current_command['papers'] = [p.strip() for p in papers_str.split(',') if p.strip()]
             elif line.startswith('FOCUS:'):
                 current_command['focus'] = line.split(':', 1)[1].strip()
+            elif line.startswith('DENSITY:'):
+                current_command['density'] = line.split(':', 1)[1].strip().lower()
             elif line.startswith('STRATEGY:'):
                 strategy = line.split(':', 1)[1].strip().lower()
             elif line.startswith('REASONING:'):
@@ -251,12 +255,14 @@ COMMAND 1:
 ACTION: fetch_summary
 PAPERS: ALL
 FOCUS: main topics
+DENSITY: normal
 
 STRATEGY: consolidate_all
 REASONING: Need overview of all papers
 
 Valid actions: fetch_summary (overview), fetch_details (specific search), fetch_comparison (compare papers)
 For PAPERS, use: ALL or specific filenames separated by commas
+For DENSITY, use: normal (default, 5 chunks) or high (deep dive, 20 chunks)
 '''
         
         try:
@@ -312,6 +318,8 @@ For PAPERS, use: ALL or specific filenames separated by commas
                     current_command['papers'] = [p.strip() for p in papers_str.split(',') if p.strip()]
             elif line.startswith('FOCUS:'):
                 current_command['focus'] = line.split(':', 1)[1].strip()
+            elif line.startswith('DENSITY:'):
+                current_command['density'] = line.split(':', 1)[1].strip().lower()
             elif line.startswith('STRATEGY:'):
                 strategy = line.split(':', 1)[1].strip().lower()
             elif line.startswith('REASONING:'):
@@ -339,6 +347,7 @@ For PAPERS, use: ALL or specific filenames separated by commas
             action = cmd.get('action')
             target_papers = cmd.get('papers', [])
             focus = cmd.get('focus', '')
+            density = cmd.get('density', 'normal')
             
             # Resolve paper IDs
             target_ids = []
@@ -351,10 +360,14 @@ For PAPERS, use: ALL or specific filenames separated by commas
             # Construct search query
             search_query = f"{focus} {user_query}"
             
+            # Determine n_results based on density
+            base_chunks = settings.chunking.max_chunks_per_query
+            n_results = (base_chunks * 4) if density == 'high' else base_chunks
+            
             # Execute search
             results = self.vector_db.search(
                 query=search_query,
-                n_results=5,
+                n_results=n_results,
                 paper_ids=target_ids if target_ids else allowed_paper_ids
             )
             all_chunks.extend(results)
@@ -369,9 +382,28 @@ For PAPERS, use: ALL or specific filenames separated by commas
                 
         return unique_chunks
 
-    def _build_context(self, chunks: List[dict], include_overview: bool = True) -> str:
+    def _build_context(
+        self,
+        chunks: List[dict],
+        include_overview: bool = True,
+        allowed_paper_ids: Optional[List[str]] = None,
+    ) -> str:
         """Format chunks into a context string."""
         context_parts = []
+
+        if include_overview:
+            # Add list of available papers to context so the model knows what's in the library
+            # regardless of what chunks were retrieved.
+            papers = self.vector_db.get_all_papers()
+            if allowed_paper_ids:
+                papers = [p for p in papers if p['paper_id'] in allowed_paper_ids]
+            
+            if papers:
+                context_parts.append("Available Papers in Knowledge Base:")
+                for p in papers:
+                    title = p.get('paper_title', p.get('paper_filename', 'Unknown'))
+                    context_parts.append(f"- {title}")
+                context_parts.append("")
         
         # Group by paper
         chunks_by_paper = {}
@@ -465,7 +497,11 @@ Answer:'''
             allowed_paper_ids=allowed_paper_ids,
             user_query=query,
         )
-        context = self._build_context(relevant_chunks, include_overview=True)
+        context = self._build_context(
+            relevant_chunks,
+            include_overview=True,
+            allowed_paper_ids=allowed_paper_ids,
+        )
         source_papers = self._extract_source_papers(relevant_chunks)
 
         # Trim context to keep prompt concise
@@ -599,7 +635,11 @@ Formatting Guidelines:
                 f"Worker found no chunks for orchestrated commands. "
                 f"Strategy: {orchestration.get('strategy')}, Reasoning: {orchestration.get('reasoning')}"
             )
-        context = self._build_context(relevant_chunks, include_overview=True)
+        context = self._build_context(
+            relevant_chunks,
+            include_overview=True,
+            allowed_paper_ids=allowed_paper_ids,
+        )
         source_papers = self._extract_source_papers(relevant_chunks)
         enhanced_query = self._enhance_query(query)
         prompt = self._build_prompt(enhanced_query, context, conversation_history)
@@ -628,7 +668,11 @@ Formatting Guidelines:
                 f"Worker found no chunks for orchestrated commands. "
                 f"Strategy: {orchestration.get('strategy')}, Reasoning: {orchestration.get('reasoning')}"
             )
-        context = self._build_context(relevant_chunks, include_overview=True)
+        context = self._build_context(
+            relevant_chunks,
+            include_overview=True,
+            allowed_paper_ids=allowed_paper_ids,
+        )
         source_papers = self._extract_source_papers(relevant_chunks)
         enhanced_query = self._enhance_query(query)
         prompt = self._build_prompt(enhanced_query, context, conversation_history)

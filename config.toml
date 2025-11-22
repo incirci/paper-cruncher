@@ -35,7 +35,8 @@ conversation_db_path = "./data/conversations.db"
 [chunking]
 chunk_size = 1000
 chunk_overlap = 200
-max_chunks_per_query = 10  # Increased from 5 for better coverage
+max_chunks_per_query = 10  # high density querries use *4 times more chunks
+title_snippet_chars = 1000
 
 [mindmap]
 # Control the depth and breadth of the generated knowledge graph
