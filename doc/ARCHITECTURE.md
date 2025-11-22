@@ -77,19 +77,27 @@ Index Papers → PDF Processor → VectorDBService.add_paper_chunks
              → data/mindmap/graph.json → D3.js viewer (/mindmap)
 ```
 
+### Deep Dive Retrieval
+
+The Orchestrator can now dynamically adjust retrieval density based on query complexity:
+- **Normal Density**: Fetches standard number of chunks (default: 10).
+- **High Density ("Deep Dive")**: Fetches 4x chunks (default: 40) for complex queries requiring comprehensive detail.
+- Controlled via `DENSITY` parameter in the Orchestrator's system prompt.
+
 ## Technology Stack
 
-- **Backend**: FastAPI + Python 3.11+
+- **Backend**: FastAPI + Python 3.12
 - **AI Model**: Google Gemini 2.5 Pro
 - **Vector DB**: ChromaDB
 - **Database**: SQLite (conversations)
 - **PDF Processing**: PyMuPDF
+- **Configuration**: `tomllib` (Python 3.11+ standard library)
 - **Visualization**: D3.js (CDN) for the mindmap viewer
 
 ## Key Design Principles
 
 - Simple, clean code
-- Modern Python features
+- Modern Python features (Python 3.12+, `tomllib`)
 - No legacy support
 - Token optimization first
 - Testable architecture
@@ -97,3 +105,4 @@ Index Papers → PDF Processor → VectorDBService.add_paper_chunks
 - Orchestrator-Worker is the single retrieval mode (no toggles)
 - Canonical paper titles used consistently across backend and frontend
 - Mindmap generation is deterministic, concept-focused, and post-processed for normalization
+

@@ -6,7 +6,7 @@ An AI-powered web application for analyzing and querying journal articles using 
 
 ### 1. Prerequisites
 
-- Python 3.11+
+- Python 3.12+ (required for `tomllib`)
 - Google Gemini API key
 
 ### 2. Setup (Local)
@@ -101,7 +101,7 @@ The app will be available at `http://localhost:8000`.
 **Alternative - Drop PDFs in papers/ folder:**
 
 - Place PDFs in `papers/` folder and click "📚 Index Papers" button
-- This method is maintained for backward compatibility
+- This method is maintained for backward compatibility (requires manual reindex)
 
 ### Managing Sessions
 
@@ -138,7 +138,7 @@ The app will be available at `http://localhost:8000`.
 1. **Session-Scoped**: Questions are always within current session context
    - AI searches only papers in the current session
    - Each session has its own paper context and conversation history
-   
+
 2. **Global Mode** (no paper selected): Ask questions about all papers in session
    - Type your question in the input box at the bottom
    - AI will search across all papers in the current session
@@ -198,7 +198,7 @@ The app will be available at `http://localhost:8000`.
 - **Markdown Formatting**: Responses include tables, lists, and code blocks
 - **Token Tracking**: Monitor API usage in real-time per session
 - **Canonical Paper Titles**: Consistent titles across UI, DB, and mindmaps
-- **Smart Mindmaps**: 
+- **Smart Mindmaps**:
   - Session-scoped knowledge graphs
   - Keyword-biased micro-summaries
   - Normalized and deduplicated concept nodes
@@ -260,7 +260,6 @@ cruncher/
 - `PUT /api/chat/session/{session_id}/context` - Update session papers
 - `GET /api/chat/history/{session_id}` - Get conversation history
 - `DELETE /api/chat/history/{session_id}` - Clear conversation (deprecated)
-- `GET /api/chat/debug/sessions` - Debug endpoint for all sessions
 
 ### Papers
 
@@ -316,6 +315,7 @@ Edit `config.toml` to customize:
 ✅ PDF processing with metadata extraction  
 ✅ Semantic search using ChromaDB  
 ✅ RAG pipeline with Google Gemini 2.5 Pro  
+✅ **Deep Dive Retrieval**: Automatically scales retrieval density for complex queries  
 ✅ **Session management with dedicated sidebar**  
 ✅ **Independent session contexts (papers + chat + tokens)**  
 ✅ **Messages persist when papers change**  
