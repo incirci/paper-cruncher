@@ -1,6 +1,6 @@
 # Journal Article AI Assistant
 
-An AI-powered web application for analyzing and querying journal articles using Google Gemini 2.5 Pro with RAG (Retrieval Augmented Generation).
+An AI-powered web application for analyzing and querying journal articles using Google Gemini 2.5 Flash with RAG (Retrieval Augmented Generation).
 
 ## Quick Start
 
@@ -166,6 +166,7 @@ The app will be available at `http://localhost:8000`.
    - Click the ✏️ icon next to "🧠 View Mindmap"
    - Enter **mindmap instructions** (free-text query)
    - Example: "Create only two top-level themes, one for physical fatigue and one for stress."
+   - **Deep Search (RAG-Powered)**: When custom instructions are provided, the system performs a semantic search across all papers to find specific details, equipment, or methods mentioned in your query, ensuring the mindmap is as detailed as a chat response.
    - Instructions influence hierarchy organization while maintaining structure
    - Structural guarantees: valid JSON, canonical paper titles as leaves, depth limits
 
@@ -196,10 +197,11 @@ The app will be available at `http://localhost:8000`.
 - **Source Citations**: AI references which papers it's using
 - **Streaming Responses**: See answers as they're generated
 - **Markdown Formatting**: Responses include tables, lists, and code blocks
-- **Token Tracking**: Monitor API usage in real-time per session
+- **Token Tracking**: Monitor API usage in real-time per session (includes hidden orchestration costs)
 - **Canonical Paper Titles**: Consistent titles across UI, DB, and mindmaps
 - **Smart Mindmaps**:
   - Session-scoped knowledge graphs
+  - **RAG-enhanced custom generation** (searches paper content for specific queries)
   - Keyword-biased micro-summaries
   - Normalized and deduplicated concept nodes
   - Per-session disk caching for instant reuse
@@ -252,12 +254,15 @@ cruncher/
 
 ### Chat & Sessions
 
-- `POST /api/chat` - Send message to AI agent (with optional session_id, paper_id)
+- `POST /api/chat` - Send message to AI agent (returns JSON)
+- `POST /api/chat/stream` - Send message to AI agent (returns SSE stream)
 - `GET /api/chat/sessions` - List all sessions with metadata
 - `GET /api/chat/session/{session_id}` - Get session details
 - `POST /api/chat/session` - Create new session
 - `DELETE /api/chat/session/{session_id}` - Delete session
-- `PUT /api/chat/session/{session_id}/context` - Update session papers
+- `PATCH /api/chat/session/{session_id}/name` - Rename session
+- `POST /api/chat/session/{session_id}/context` - Update session papers
+- `POST /api/chat/session/{session_id}/clear` - Clear messages (keep context)
 - `GET /api/chat/history/{session_id}` - Get conversation history
 - `DELETE /api/chat/history/{session_id}` - Clear conversation (deprecated)
 

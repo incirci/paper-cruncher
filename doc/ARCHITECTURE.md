@@ -72,7 +72,8 @@ Context Building → Prompt → Gemini API (streaming) → Response
 
 Index Papers → PDF Processor → VectorDBService.add_paper_chunks
              → VectorDBService.get_paper_summaries (micro-summaries)
-             → MindmapService.build_prompt (concept-focused)
+             → [Optional: Vector Search for Custom Query]
+             → MindmapService.build_prompt (concept-focused + optional RAG context)
              → Gemini (graph JSON) → MindmapService._normalize_and_deduplicate
              → data/mindmap/graph.json → D3.js viewer (/mindmap)
 ```
@@ -84,10 +85,20 @@ The Orchestrator can now dynamically adjust retrieval density based on query com
 - **High Density ("Deep Dive")**: Fetches 4x chunks (default: 40) for complex queries requiring comprehensive detail.
 - Controlled via `DENSITY` parameter in the Orchestrator's system prompt.
 
+### RAG-Powered Mindmaps
+
+The Mindmap generation pipeline now supports Retrieval Augmented Generation (RAG) for custom queries:
+
+1. **User Query**: User provides specific instructions (e.g., "Map out all sensors used").
+2. **Vector Search**: System searches the vector DB for chunks relevant to the query.
+3. **Context Injection**: Retrieved chunks are injected into the LLM prompt alongside paper summaries.
+4. **Generation**: The LLM uses both high-level summaries and specific details to build the tree.
+
+
 ## Technology Stack
 
 - **Backend**: FastAPI + Python 3.12
-- **AI Model**: Google Gemini 2.5 Pro
+- **AI Model**: Google Gemini 2.5 Flash
 - **Vector DB**: ChromaDB
 - **Database**: SQLite (conversations)
 - **PDF Processing**: PyMuPDF
