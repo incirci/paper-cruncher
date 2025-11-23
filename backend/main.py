@@ -117,25 +117,52 @@ async def reset_all_data():
     # The vector DB path lives under the data directory, so use its
     # parent as the canonical data root (e.g. ROOT/data).
     data_root = settings.get_vector_db_path().parent
-
-    # Wipe on-disk data first.
-    if data_root.exists():
-        # Use ignore_errors=True to do a best-effort deletion.
-        # This ensures that non-locked files (like uploads) are deleted
-        # even if DB files are locked by the running process.
-        rmtree(data_root, ignore_errors=True)
-
-    # Also clear any in-memory / DB-backed conversation, token, and
-    # paper state so list_sessions, debug endpoints, and /papers
-    # return a clean slate immediately after reset.
     app_state: AppState = app.state.app_state
-    app_state.conversation_manager.reset_all()
-    app_state.token_tracker.reset_all()
-    app_state.paper_manager.reset_all()
-    app_state.mindmap_service.reset_all()
-    app_state.vector_db.reset()
 
-    return {"message": f"All data reset: removed directory {data_root} and cleared conversations/tokens"}
+    # 1. Reset services first (logical delete)
+    # This clears the DB contents without deleting the locked DB files
+    try:
+        app_state.vector_db.reset()
+    except Exception as e:
+        print(f"Error resetting vector DB: {e}")
+
+    try:
+        app_state.conversation_manager.reset_all()
+    except Exception as e:
+        print(f"Error resetting conversation manager: {e}")
+
+    try:
+        app_state.token_tracker.reset_all()
+    except Exception as e:
+        print(f"Error resetting token tracker: {e}")
+
+    try:
+        app_state.paper_manager.reset_all()
+    except Exception as e:
+        print(f"Error resetting paper manager: {e}")
+
+    try:
+        app_state.mindmap_service.reset_all()
+    except Exception as e:
+        print(f"Error resetting mindmap service: {e}")
+
+    # 2. Physically delete non-locked artifacts
+    # We explicitly delete folders that contain static files (PDFs, JSONs)
+    # but avoid deleting the directories containing active DB files (vectordb, conversations)
+    # to prevent "file in use" errors on Windows/Docker.
+    
+    folders_to_wipe = ["uploads", "cache", "mindmap"]
+    for folder in folders_to_wipe:
+        path = data_root / folder
+        if path.exists():
+            try:
+                rmtree(path, ignore_errors=True)
+                # Recreate empty directory
+                path.mkdir(exist_ok=True)
+            except Exception as e:
+                print(f"Error wiping {folder}: {e}")
+
+    return {"message": f"All data reset: cleared DBs and removed static files in {data_root}"}
 
 
 # Serve frontend
@@ -445,9 +472,9 @@ async def serve_mindmap_page():
                     node.children = filteredChildren;
                     
                     // Update label count if present
-                    if (node.name && node.name.match(/\(\d+\)$/)) {
+                    if (node.name && node.name.match(/\\(\\d+\\)$/)) {
                         const count = countLeaves(node);
-                        node.name = node.name.replace(/\(\d+\)$/, `(${count})`);
+                        node.name = node.name.replace(/\\(\\d+\\)$/, `(${count})`);
                     }
                     
                     // Update citation_count for the group node based on remaining children
