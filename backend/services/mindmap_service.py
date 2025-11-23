@@ -50,7 +50,7 @@ class MindmapService:
         self._graph_cache.clear()
         self._paper_graph_cache.clear()
 
-    def build_prompt(self, summaries: List[Dict[str, Any]], custom_query: Optional[str] = None) -> str:
+    def build_prompt(self, summaries: List[Dict[str, Any]], custom_query: Optional[str] = None, rag_context: Optional[str] = None) -> str:
         """Build prompt to extract a hierarchical knowledge tree as JSON (NotebookLM-style).
 
         If custom_query is provided, it is appended as additional user
@@ -80,16 +80,24 @@ class MindmapService:
         else:  # max_depth >= 5
             depth_guidance = "Create a detailed, deep hierarchy with 4-5 levels: use multiple nested subtopic layers (Theme > Major Subtopic > Minor Subtopic > Specific Area > Paper) to organize papers granularly."
 
+        context_block = ""
+        if rag_context:
+            context_block = (
+                "\n\nDETAILED CONTEXT FROM SEARCH (Use this to extract specific concepts, equipment, methods, or findings):\n"
+                f"{rag_context}\n"
+            )
+
         base_prompt = (
             "You are an information architect. From the papers and summaries below, "
             "produce a hierarchical knowledge tree (NotebookLM-style) organized by nested topics and subtopics.\n\n"
             "Focus on *conceptual content* rather than document structure or publication type. "
             "Internal node names should capture the key ideas, phenomena, variables, tasks, datasets, methods, equipment, tools, and contexts described in the papers, "
             "not generic labels.\n\n"
-            f"PAPERS (only these are allowed):\n{papers_block}\n\n"
-            "Output STRICTLY valid JSON (no markdown, no backticks, no explanation). Use exactly this recursive structure:\n"
+            f"PAPERS (only these are allowed):\n{papers_block}\n"
+            f"{context_block}\n"
+            "Output STRICTLY valid JSON (no markdown, no backticks, no explanation). Use this recursive structure:\n"
             "{\n"
-            '  "name": "Research Topics",\n'
+            '  "name": "Research Topics (or custom root name)",\n'
             '  "children": [\n'
             '    {\n'
             '      "name": "Theme or Category",\n'
@@ -105,6 +113,7 @@ class MindmapService:
             '  ]\n'
             "}\n\n"
             "Constraints (must follow all):\n"
+            "- The root node should be named 'Research Topics' by default, unless custom instructions specify otherwise.\n"
             "- Use ONLY the provided paper canonical titles from the list; NEVER invent or alter titles. Canonical titles are of the exact form '<filename> (<inferred_title_if_present>)'.\n"
             "- Papers must appear ONLY as leaf nodes (no children under a paper node).\n"
             f"- Create {min_themes}–{max_themes} top-level themes.\n"
@@ -122,14 +131,16 @@ class MindmapService:
 
         if custom_query:
             custom_block = (
-                "\n\nCustom user instructions for structuring the mindmap (must still obey ALL constraints above except for the root node name which can be overruled by the custom instruction):\n"
+                "\n\nIMPORTANT CUSTOM INSTRUCTIONS:\n"
+                "The user has provided specific instructions for structuring this mindmap. "
+                "You MUST follow these instructions, even if they override the default root node name or structure described above:\n"
                 f"{custom_query}\n"
             )
             return base_prompt + custom_block
 
         return base_prompt
 
-    def build_single_paper_prompt(self, summary: Dict[str, Any], custom_query: Optional[str] = None) -> str:
+    def build_single_paper_prompt(self, summary: Dict[str, Any], custom_query: Optional[str] = None, rag_context: Optional[str] = None) -> str:
         """Build prompt for a single-paper mindmap (paper as root node).
 
         The model is asked to organize the content of one paper into a
@@ -143,11 +154,19 @@ class MindmapService:
         max_depth = settings.mindmap.max_depth
         max_node_length = settings.mindmap.node_name_max_length
 
+        context_block = ""
+        if rag_context:
+            context_block = (
+                "\n\nDETAILED CONTEXT FROM SEARCH (Use this to extract specific concepts, equipment, methods, or findings):\n"
+                f"{rag_context}\n"
+            )
+
         base_prompt = (
             "You are an information architect. From the content description of a single research paper, "
             "produce a hierarchical mindmap that captures its main topics and subtopics.\n\n"
             f"PAPER (canonical title): {title}\n"
-            f"SUMMARY:\n{cleaned_summary}\n\n"
+            f"SUMMARY:\n{cleaned_summary}\n"
+            f"{context_block}\n"
             "Output STRICTLY valid JSON (no markdown, no backticks, no explanation) with this structure:\n"
             "{\n"
             '  "name": "Paper canonical title",\n'
@@ -296,7 +315,36 @@ class MindmapService:
                     pass
 
         # Build and send prompt
-        prompt = self.build_prompt(summaries, custom_query=custom_query)
+        rag_context = None
+        if custom_query:
+            # Perform RAG search to enrich the context
+            # We increase n_results to get a good spread of information
+            search_results = self.vector_db.search(
+                query=custom_query, 
+                n_results=getattr(settings.mindmap, "rag_context_chunks", 40),
+                paper_ids=paper_ids
+            )
+            
+            # Group chunks by paper for cleaner context
+            chunks_by_paper = {}
+            for chunk in search_results:
+                meta = chunk.get('metadata', {})
+                pid = meta.get('paper_id')
+                title = meta.get('paper_title') or meta.get('paper_filename') or "Unknown Paper"
+                if pid:
+                    if title not in chunks_by_paper:
+                        chunks_by_paper[title] = []
+                    chunks_by_paper[title].append(chunk.get('content', ''))
+            
+            context_parts = []
+            for title, chunks in chunks_by_paper.items():
+                context_parts.append(f"--- Details from {title} ---")
+                context_parts.extend(chunks)
+            
+            if context_parts:
+                rag_context = "\n".join(context_parts)
+
+        prompt = self.build_prompt(summaries, custom_query=custom_query, rag_context=rag_context)
         response = self.model.generate_content(prompt)
         tree = self._safe_parse_json(response.text or "")
 
@@ -355,7 +403,23 @@ class MindmapService:
             return self._paper_graph_cache[cache_key]
 
         # Build and send prompt for this single paper
-        prompt = self.build_single_paper_prompt(paper_summary, custom_query=custom_query)
+        rag_context = None
+        if custom_query:
+            # Perform RAG search to enrich the context for this single paper
+            search_results = self.vector_db.search(
+                query=custom_query, 
+                n_results=getattr(settings.mindmap, "rag_context_chunks", 20), # Fewer chunks for single paper
+                paper_ids=[paper_id]
+            )
+            
+            context_parts = []
+            for chunk in search_results:
+                context_parts.append(chunk.get('content', ''))
+            
+            if context_parts:
+                rag_context = "\n".join(context_parts)
+
+        prompt = self.build_single_paper_prompt(paper_summary, custom_query=custom_query, rag_context=rag_context)
         response = self.model.generate_content(prompt)
         tree = self._safe_parse_json(response.text or "")
 
