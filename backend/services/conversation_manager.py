@@ -361,3 +361,24 @@ class ConversationManager:
                 "SELECT 1 FROM conversations WHERE session_id = ?", (session_id,)
             )
             return cursor.fetchone() is not None
+
+    def duplicate_session(self, source_session_id: str) -> str:
+        """Duplicate a session (papers only, no messages).
+        
+        Args:
+            source_session_id: ID of the session to duplicate
+            
+        Returns:
+            New session ID
+        """
+        source_conv = self.get_conversation(source_session_id)
+        if not source_conv:
+            raise ValueError("Source session not found")
+            
+        new_name = f"Copy of {source_conv.session_name}" if source_conv.session_name else "Copy of Session"
+        
+        return self.create_session(
+            selected_paper_id=source_conv.selected_paper_id,
+            paper_ids=source_conv.paper_ids,
+            session_name=new_name
+        )

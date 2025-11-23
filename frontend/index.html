@@ -17,6 +17,7 @@
             height: 100vh;
             display: flex;
             background: #f5f5f5;
+            overflow-x: hidden;
         }
 
         .sidebar {
@@ -35,14 +36,14 @@
         .sessions-sidebar {
             width: 280px;
             background: white;
-            border-right: 1px solid #e0e0e0;
+            border-left: 1px solid #e0e0e0;
             display: flex;
             flex-direction: column;
-            transition: margin-left 0.3s;
+            transition: margin-right 0.3s;
         }
 
         .sessions-sidebar.collapsed {
-            margin-left: -280px;
+            margin-right: -280px;
         }
 
         .sessions-header {
@@ -547,17 +548,6 @@
     </style>
 </head>
 <body>
-    <div class="sessions-sidebar" id="sessionsSidebar">
-        <div class="sessions-header">
-            <h3>💬 Sessions</h3>
-            <button class="toggle-sidebar" style="padding: 4px 8px; font-size: 12px;" onclick="toggleSessionsSidebar()">✕</button>
-        </div>
-        <button class="new-session-btn" onclick="newSession()">＋ New Session</button>
-        <div class="sessions-list" id="sessionsList">
-            <div class="empty-state" style="padding: 20px; text-align: center; color: #999; font-size: 13px;">No saved sessions</div>
-        </div>
-    </div>
-    
     <div class="sidebar" id="sidebar">
         <div class="sidebar-header">
             <div class="sidebar-title-row">
@@ -582,9 +572,6 @@
                     ✏️
                 </button>
             </div>
-            <button class="index-button secondary" id="citationMapButton" onclick="openCitationMap()" style="width: 100%;">
-                🕸️ View Citation Map
-            </button>
         </div>
         <div class="papers-list" id="papersList">
             <div class="empty-state">Upload PDFs via the button or drop them here</div>
@@ -599,9 +586,7 @@
             </div>
             <div class="stats">
                 <button class="toggle-sidebar" style="margin-right: 12px;" onclick="clearChat()">🧹 Clear Chat</button>
-                <button class="danger-button" style="margin-right: 12px;" onclick="resetAllData()">⚠ Reset All Data</button>
-                <span id="activeSessionLabel" style="margin-right: 12px; color: #555;">Session: –</span>
-                <span id="tokenStats">Tokens: 0</span>
+                <button class="danger-button" onclick="resetAllData()">⚠ Reset All Data</button>
             </div>
         </div>
 
@@ -620,6 +605,18 @@
                 rows="1"
             ></textarea>
             <button class="send-button" id="sendButton" onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+
+    <div class="sessions-sidebar" id="sessionsSidebar">
+        <div class="sessions-header">
+            <h3>💬 Sessions</h3>
+            <button class="toggle-sidebar" style="padding: 4px 8px; font-size: 12px;" onclick="toggleSessionsSidebar()">✕</button>
+        </div>
+        <button class="new-session-btn" onclick="newSession()">＋ New Session</button>
+        <button class="new-session-btn" onclick="duplicateSession()" style="background: #6c757d; margin-top: 0;">❐ Duplicate Session</button>
+        <div class="sessions-list" id="sessionsList">
+            <div class="empty-state" style="padding: 20px; text-align: center; color: #999; font-size: 13px;">No saved sessions</div>
         </div>
     </div>
 
@@ -704,7 +701,7 @@
                     if (res.ok) {
                         const data = await res.json();
                         sessionId = data.session_id;
-                        updateActiveSessionLabelFromId(sessionId);
+                        updateActiveSessionLabel(null, sessionId);
                         try { window.sessionStorage.setItem(LAST_SESSION_KEY, sessionId); } catch {}
                         // Persist empty context so subsequent uploads attach cleanly
                         await saveSessionContext();
@@ -988,8 +985,11 @@
                     try {
                         const data = JSON.parse(evt.data);
                         if (data.type === 'session') {
-                            sessionId = data.session_id;
-                            updateActiveSessionLabelFromId(sessionId);
+                            const newId = data.session_id;
+                            if (sessionId !== newId) {
+                                sessionId = newId;
+                                updateActiveSessionLabel(null, sessionId);
+                            }
                             try {
                                 window.sessionStorage.setItem(LAST_SESSION_KEY, sessionId);
                             } catch (e) {
@@ -1358,6 +1358,9 @@
                 if (res.ok) {
                     // Refresh the sessions list to show updated name
                     await loadSessionsList();
+                    if (sessionIdToRename === sessionId) {
+                        updateActiveSessionLabel(newName.trim(), sessionId);
+                    }
                 } else {
                     alert('Failed to rename session');
                 }
@@ -1377,7 +1380,7 @@
                 const conversation = await res.json();
 
                 sessionId = conversation.session_id;
-                updateActiveSessionLabelFromId(sessionId);
+                updateActiveSessionLabel(conversation.session_name, sessionId);
                 try {
                     window.sessionStorage.setItem(LAST_SESSION_KEY, sessionId);
                 } catch (e) {
@@ -1426,7 +1429,6 @@
                 const chatContainer = document.getElementById('chatContainer');
                 chatContainer.innerHTML = '<div class="empty-state">Ask a question about the papers</div>';
                 autoScroll = true;
-                document.getElementById('tokenStats').textContent = 'Tokens: 0';
                 return;
             }
 
@@ -1477,7 +1479,6 @@
             // Clear UI
             chatContainer.innerHTML = '<div class="empty-state">Ask a question about the papers</div>';
             autoScroll = true;
-            document.getElementById('tokenStats').textContent = 'Tokens: 0';
 
             // Create a brand new backend session with empty paper_ids
             try {
@@ -1489,7 +1490,7 @@
                 
                 const data = await res.json();
                 sessionId = data.session_id;
-                updateActiveSessionLabelFromId(sessionId);
+                updateActiveSessionLabel(null, sessionId);
                 try {
                     window.sessionStorage.setItem(LAST_SESSION_KEY, sessionId);
                 } catch (e) {
@@ -1536,7 +1537,7 @@
                 if (createRes.ok) {
                     const data = await createRes.json();
                     sessionId = data.session_id;
-                    updateActiveSessionLabelFromId(sessionId);
+                    updateActiveSessionLabel(null, sessionId);
                     try {
                         window.sessionStorage.setItem(LAST_SESSION_KEY, sessionId);
                     } catch (e) {
@@ -1622,15 +1623,20 @@
             }
         }
 
-        function updateActiveSessionLabelFromId(id) {
-            const labelEl = document.getElementById('activeSessionLabel');
-            if (!labelEl) return;
+        function updateActiveSessionLabel(name, id) {
+            const baseTitle = 'Journal Article AI Assistant';
+
             if (!id) {
-                labelEl.textContent = 'Session: –';
+                document.title = baseTitle;
                 return;
             }
-            const shortId = String(id).slice(0, 8);
-            labelEl.textContent = `Session: ${shortId}`;
+            
+            if (name) {
+                document.title = `${name} - ${baseTitle}`;
+            } else {
+                const shortId = String(id).slice(0, 8);
+                document.title = `Session ${shortId} - ${baseTitle}`;
+            }
         }
 
         async function saveSessionContext(opts = {}) {
@@ -1661,15 +1667,9 @@
         }
 
         async function updateTokenStats() {
-            if (!sessionId) return;
-            
-            try {
-                const response = await fetch(`${API_URL}/tokens/usage/${sessionId}`);
-                const data = await response.json();
-                document.getElementById('tokenStats').textContent = 
-                    `Tokens: ${data.total_tokens.toLocaleString()}`;
-            } catch (error) {
-                console.error('Error updating token stats:', error);
+            // Token stats are shown in the sidebar, so refresh the list to update them
+            if (sessionId) {
+                await loadSessionsList();
             }
         }
 
@@ -1685,7 +1685,7 @@
                     const res = await fetch(`${API_URL}/chat/session/${lastId}`);
                     if (res.ok) {
                         await loadSession(lastId);
-                        updateActiveSessionLabelFromId(lastId);
+                        // updateActiveSessionLabel is handled by loadSession
                         return;
                     }
                     // Session no longer exists; clear stored id
@@ -1699,12 +1699,12 @@
                 });
                 if (!createRes.ok) {
                     console.warn('Failed to create initial session');
-                    updateActiveSessionLabelFromId(null);
+                    updateActiveSessionLabel(null, null);
                     return;
                 }
                 const created = await createRes.json();
                 sessionId = created.session_id;
-                updateActiveSessionLabelFromId(sessionId);
+                updateActiveSessionLabel(null, sessionId);
                 try {
                     window.sessionStorage.setItem(LAST_SESSION_KEY, sessionId);
                 } catch (e) {
@@ -1718,6 +1718,30 @@
                 console.warn('Failed to initialize session on load', e);
             }
         });
+
+        async function duplicateSession() {
+            if (!sessionId) {
+                alert("No active session to duplicate.");
+                return;
+            }
+            
+            try {
+                const res = await fetch(`${API_URL}/chat/session/${sessionId}/duplicate`, {
+                    method: 'POST'
+                });
+                
+                if (res.ok) {
+                    const data = await res.json();
+                    // Switch to the new session
+                    await switchToSession(data.session_id);
+                } else {
+                    alert("Failed to duplicate session");
+                }
+            } catch (e) {
+                console.error("Error duplicating session", e);
+                alert("Error duplicating session");
+            }
+        }
     </script>
 </body>
 </html>

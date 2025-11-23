@@ -632,3 +632,18 @@ async def get_session_with_context(request: Request, session_id: str):
         raise HTTPException(status_code=404, detail="Session not found")
 
     return conversation
+
+
+@router.post("/chat/session/{session_id}/duplicate")
+async def duplicate_session(request: Request, session_id: str):
+    """Duplicate a session (papers only, no messages)."""
+    app_state = request.app.state.app_state
+
+    if not app_state.conversation_manager.session_exists(session_id):
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    try:
+        new_session_id = app_state.conversation_manager.duplicate_session(session_id)
+        return {"session_id": new_session_id, "message": "Session duplicated"}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
