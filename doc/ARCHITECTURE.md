@@ -53,7 +53,7 @@ cruncher/
    - Text chunking helpers
    - Misc helper functions
 
-### Data Flow
+### Data Flowbe
 
 ```text
 User Request → FastAPI → Service Layer → AI Agent / Vector DB
