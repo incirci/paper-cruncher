@@ -77,18 +77,8 @@ class PaperManager:
         # Fetch OpenAlex metadata if client is available
         if self.openalex_client:
             try:
-                # Determine search title: prefer explicit inferred title if available
-                search_title = metadata.inferred_title
-                
-                # Fallback: try to parse from canonical title if inferred is missing
-                if not search_title:
-                    search_title = metadata.canonical_title
-                    if metadata.filename and search_title.startswith(metadata.filename):
-                        remainder = search_title[len(metadata.filename):].strip()
-                        if remainder.startswith("(") and remainder.endswith(")"):
-                            candidate = remainder[1:-1].strip()
-                            if candidate:
-                                search_title = candidate
+                # Determine search title using the robust display_title logic
+                search_title = metadata.display_title
                 
                 # Final cleanup
                 if search_title:
@@ -111,6 +101,13 @@ class PaperManager:
                         metadata.authors = [a["name"] for a in details.get("authors", [])]
                         metadata.primary_topic = details.get("primary_topic")
                         metadata.url = details.get("url")
+                        
+                        # Update title if we have a good one from OpenAlex
+                        if details.get("title"):
+                             metadata.canonical_title = details.get("title")
+                             # Also update inferred_title if it was empty or looked like a filename
+                             if not metadata.inferred_title or metadata.inferred_title == metadata.filename:
+                                 metadata.inferred_title = details.get("title")
                         
                         # Update chunks metadata with new info
                         for chunk in chunks:

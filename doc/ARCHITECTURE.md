@@ -2,22 +2,44 @@
 
 ## Project Structure
 
-```
+```text
 cruncher/
 ├── backend/
 │   ├── api/              # FastAPI endpoints
-│   ├── core/             # Configuration & settings
+│   │   ├── chat.py       # Chat & session endpoints
+│   │   ├── papers.py     # Paper upload & management
+│   │   ├── tokens.py     # Token tracking
+│   │   ├── agent.py      # Agent config
+│   │   ├── mindmap.py    # Mindmap endpoints
+│   │   └── config.py     # App config
+│   ├── core/             # Configuration
+│   │   └── config.py     # Settings loader
 │   ├── services/         # Business logic
-│   ├── models/           # Data models & schemas
-│   └── utils/            # Helper functions
-├── frontend/             # Web UI
-├── data/                 # Vector DB & conversations (gitignored)
-├── papers/               # PDF storage (gitignored)
-├── tests/                # Test suite
-├── config.toml           # Application config
-├── .env                  # Environment variables (gitignored)
-├── .env_example          # Environment template
-└── requirements.txt      # Python dependencies
+│   │   ├── ai_agent.py           # Gemini integration
+│   │   ├── citation_service.py   # OpenAlex citation graph
+│   │   ├── conversation_manager.py  # Session & message management
+│   │   ├── mindmap_service.py    # Knowledge graph generation
+│   │   ├── openalex_client.py    # OpenAlex API client
+│   │   ├── paper_manager.py      # Paper metadata
+│   │   ├── pdf_processor.py      # PDF extraction
+│   │   ├── progress_manager.py   # SSE progress streaming
+│   │   ├── token_tracker.py      # Token monitoring
+│   │   └── vector_db.py          # ChromaDB
+│   ├── models/           # Data models
+│   │   └── schemas.py    # Pydantic schemas
+│   └── main.py           # FastAPI app
+├── frontend/
+│   └── index.html        # Web UI (sessions sidebar, papers sidebar, chat)
+├── data/                 # Runtime data (auto-created)
+│   ├── uploads/          # Uploaded PDFs
+│   ├── vectordb/         # ChromaDB storage
+│   └── mindmap/          # Mindmap cache
+│       ├── sessions/     # Per-session graphs
+│       └── graph.json    # Global graph
+├── papers/               # Optional PDF storage (legacy)
+├── config.toml           # App configuration
+├── .env                  # API keys
+└── run.py                # Run script
 ```
 
 ## Architecture Overview
@@ -127,3 +149,4 @@ The Mindmap generation pipeline now supports Retrieval Augmented Generation (RAG
 - Orchestrator-Worker is the single retrieval mode (no toggles)
 - Canonical paper titles used consistently across backend and frontend
 - Mindmap generation is deterministic, concept-focused, and post-processed for normalization
+- **"UI follows backend" consistency**: All state changes sync through the backend; the UI is a reflection of backend state, updated via SSE.

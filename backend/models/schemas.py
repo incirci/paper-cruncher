@@ -40,6 +40,37 @@ class PaperMetadata(BaseModel):
     primary_topic: Optional[str] = None
     url: Optional[str] = None
 
+    @property
+    def display_title(self) -> str:
+        """
+        Get the best available human-readable title.
+        
+        Priority:
+        1. Inferred Title (from AI or OpenAlex)
+        2. Parsed from Canonical Title (if format matches 'filename (title)')
+        3. Canonical Title
+        4. Filename
+        """
+        # 1. Use explicit inferred title if available
+        if self.inferred_title and self.inferred_title != self.filename:
+            return self.inferred_title
+
+        # 2. Try to parse from canonical title
+        if self.canonical_title and self.filename and self.canonical_title.startswith(self.filename):
+            remainder = self.canonical_title[len(self.filename):].strip()
+            if remainder.startswith("(") and remainder.endswith(")"):
+                candidate = remainder[1:-1].strip()
+                if candidate:
+                    return candidate
+
+        # 3. Fallback to canonical title
+        if self.canonical_title:
+            return self.canonical_title
+
+        # 4. Fallback to filename
+        return self.filename
+
+
 
 class PaperChunk(BaseModel):
     """A chunk of text from a paper."""

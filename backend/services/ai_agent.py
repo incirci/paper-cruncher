@@ -167,6 +167,7 @@ For DENSITY, use: normal (default, 5 chunks) or high (deep dive, 20 chunks)
         Synchronous Orchestrator Agent: Analyzes query and issues specific commands for information gathering.
         """
         paper_summaries = self.vector_db.get_paper_summaries()
+        self._enrich_summaries(paper_summaries)
 
         # First, restrict to session-allowed papers if provided
         if allowed_paper_ids:
@@ -213,6 +214,7 @@ For DENSITY, use: normal (default, 5 chunks) or high (deep dive, 20 chunks)
         Async Orchestrator Agent: Analyzes query and issues specific commands for information gathering.
         """
         paper_summaries = self.vector_db.get_paper_summaries()
+        self._enrich_summaries(paper_summaries)
 
         # First, restrict to session-allowed papers if provided
         if allowed_paper_ids:
@@ -494,6 +496,16 @@ For DENSITY, use: normal (default, 5 chunks) or high (deep dive, 20 chunks)
         allowed_paper_ids: Optional[List[str]] = None,
     ) -> str:
         """Format chunks into a context string."""
+        
+        # Helper to get paper details
+        def get_paper_details(pid, default_title, default_filename):
+            if self.citation_service:
+                paper = self.citation_service.paper_manager.get_paper(pid)
+                if paper:
+                    return paper.display_title, paper.filename
+            
+            return default_title or default_filename or "Unknown Paper", default_filename or "Unknown Filename"
+
         context_parts = []
 
         if include_overview:
@@ -506,8 +518,8 @@ For DENSITY, use: normal (default, 5 chunks) or high (deep dive, 20 chunks)
             if papers:
                 context_parts.append("Available Papers in Knowledge Base:")
                 for p in papers:
-                    title = p.get('paper_title', p.get('paper_filename', 'Unknown'))
-                    context_parts.append(f"- {title}")
+                    title, filename = get_paper_details(p['paper_id'], p.get('paper_title'), p.get('paper_filename'))
+                    context_parts.append(f"- Title: {title} (Filename: {filename})")
                 context_parts.append("")
         
         # Group by paper
@@ -521,9 +533,12 @@ For DENSITY, use: normal (default, 5 chunks) or high (deep dive, 20 chunks)
         for pid, paper_chunks in chunks_by_paper.items():
             # Get paper title/filename from first chunk metadata
             meta = paper_chunks[0]['metadata']
-            title = meta.get('paper_title', meta.get('paper_filename', 'Unknown Paper'))
+            title, filename = get_paper_details(pid, meta.get('paper_title'), meta.get('paper_filename'))
             
-            context_parts.append(f"--- Paper: {title} ---")
+            context_parts.append(f"--- Paper Analysis ---")
+            context_parts.append(f"Title: {title}")
+            context_parts.append(f"Filename: {filename}")
+            context_parts.append("Content Snippets:")
             for chunk in paper_chunks:
                 context_parts.append(chunk['content'])
             context_parts.append("")
@@ -862,3 +877,11 @@ Formatting Guidelines:
         )
 
         return response_text, source_papers, token_usage
+
+    def _enrich_summaries(self, summaries: List[dict]) -> None:
+        """Enrich summaries with fresh titles from paper_manager in-place."""
+        if self.citation_service:
+            for p in summaries:
+                paper = self.citation_service.paper_manager.get_paper(p['paper_id'])
+                if paper:
+                    p['paper_title'] = paper.display_title

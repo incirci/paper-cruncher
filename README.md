@@ -239,44 +239,15 @@ The app will be available at `http://localhost:8000`.
 
 ## Project Structure
 
+For a detailed breakdown of the architecture, services, and data flow, please refer to [ARCHITECTURE.md](doc/ARCHITECTURE.md).
+
 ```text
 cruncher/
-├── backend/
-│   ├── api/              # FastAPI endpoints
-│   │   ├── chat.py       # Chat & session endpoints
-│   │   ├── papers.py     # Paper upload & management
-│   │   ├── tokens.py     # Token tracking
-│   │   ├── agent.py      # Agent config
-│   │   ├── mindmap.py    # Mindmap endpoints
-│   │   └── config.py     # App config
-│   ├── core/             # Configuration
-│   │   └── config.py     # Settings loader
-│   ├── services/         # Business logic
-│   │   ├── ai_agent.py           # Gemini integration
-│   │   ├── citation_service.py   # OpenAlex citation graph
-│   │   ├── conversation_manager.py  # Session & message management
-│   │   ├── mindmap_service.py    # Knowledge graph generation
-│   │   ├── openalex_client.py    # OpenAlex API client
-│   │   ├── paper_manager.py      # Paper metadata
-│   │   ├── pdf_processor.py      # PDF extraction
-│   │   ├── progress_manager.py   # SSE progress streaming
-│   │   ├── token_tracker.py      # Token monitoring
-│   │   └── vector_db.py          # ChromaDB
-│   ├── models/           # Data models
-│   │   └── schemas.py    # Pydantic schemas
-│   └── main.py           # FastAPI app
-├── frontend/
-│   └── index.html        # Web UI (sessions sidebar, papers sidebar, chat)
-├── data/                 # Runtime data (auto-created)
-│   ├── uploads/          # Uploaded PDFs
-│   ├── vectordb/         # ChromaDB storage
-│   └── mindmap/          # Mindmap cache
-│       ├── sessions/     # Per-session graphs
-│       └── graph.json    # Global graph
-├── papers/               # Optional PDF storage (legacy)
-├── config.toml           # App configuration
-├── .env                  # API keys
-└── run.py                # Run script
+├── backend/              # FastAPI application
+├── frontend/             # Single-file HTML/JS UI
+├── data/                 # Runtime storage (VectorDB, uploads)
+├── config.toml           # Configuration
+└── run.py                # Entry point
 ```
 
 ## API Endpoints
@@ -372,7 +343,6 @@ Edit `config.toml` to customize:
 ✅ Canonical titles and concept-focused mindmap structure  
 ✅ Custom mindmap instructions for alternative views  
 ✅ Streaming responses with markdown formatting  
-✅ **"UI follows backend" architecture for consistency**  
 ✅ **Real-time session updates via SSE events**  
 
 ## API Documentation

@@ -39,16 +39,7 @@ class CitationService:
             raise ValueError(f"Paper with ID {paper_id} not found")
 
         # Determine best search title
-        search_title = local_paper.canonical_title
-        
-        # If canonical title follows the pattern "filename (inferred)", extract inferred
-        # This is safer than rsplit which might break on titles containing parentheses
-        if local_paper.filename and search_title.startswith(local_paper.filename):
-            remainder = search_title[len(local_paper.filename):].strip()
-            if remainder.startswith("(") and remainder.endswith(")"):
-                candidate = remainder[1:-1].strip()
-                if candidate:
-                    search_title = candidate
+        search_title = local_paper.display_title
         
         # Fallback: if title still looks like a filename, strip extension
         if search_title.lower().endswith(".pdf"):
@@ -113,7 +104,7 @@ class CitationService:
         # BUT: Only if we don't need the full graph (references/citations)
         if not fetch_full_details and local_paper.openalex_id and local_paper.publication_year:
              return {
-                "title": local_paper.canonical_title, # Use canonical title or fetched title?
+                "title": local_paper.display_title, # Use display title
                 "year": local_paper.publication_year,
                 "authors": local_paper.authors,
                 "citation_count": local_paper.citation_count,
@@ -121,7 +112,7 @@ class CitationService:
                 "concepts": [], # We might not have stored concepts in metadata yet
                 "url": local_paper.url,
                 "paper_id": paper_id,
-                "local_title": local_paper.canonical_title,
+                "local_title": local_paper.display_title,
                 # We might need to fetch full details if references/citations are requested
                 # but for basic metadata questions, this is enough.
                 # However, the agent might ask for references.
@@ -129,14 +120,7 @@ class CitationService:
              }
 
         # Determine best search title
-        search_title = local_paper.canonical_title
-        
-        if local_paper.filename and search_title.startswith(local_paper.filename):
-            remainder = search_title[len(local_paper.filename):].strip()
-            if remainder.startswith("(") and remainder.endswith(")"):
-                candidate = remainder[1:-1].strip()
-                if candidate:
-                    search_title = candidate
+        search_title = local_paper.display_title
         
         if search_title.lower().endswith(".pdf"):
             search_title = search_title[:-4]
@@ -152,7 +136,7 @@ class CitationService:
             
             if not work_id:
                 return {
-                    "title": local_paper.canonical_title,
+                    "title": local_paper.display_title,
                     "year": local_paper.publication_year or "Unknown",
                     "authors": local_paper.authors or ["Unknown"],
                     "citation_count": local_paper.citation_count or "Unknown",
@@ -160,7 +144,7 @@ class CitationService:
                     "concepts": [],
                     "url": local_paper.url,
                     "paper_id": paper_id,
-                    "local_title": local_paper.canonical_title,
+                    "local_title": local_paper.display_title,
                     "references": [],
                     "citations": []
                 }
@@ -180,7 +164,7 @@ class CitationService:
                 "concepts": data.get("concepts", []),
                 "url": data.get("url"),
                 "paper_id": paper_id,
-                "local_title": local_paper.canonical_title,
+                "local_title": local_paper.display_title,
                 "references": data.get("references", []),
                 "citations": data.get("citations", [])
             }
@@ -188,7 +172,7 @@ class CitationService:
         except Exception as e:
             self.logger.error(f"Error fetching metadata for {paper_id}: {e}")
             return {
-                "title": local_paper.canonical_title,
+                "title": local_paper.display_title,
                 "year": local_paper.publication_year or "Unknown",
                 "authors": local_paper.authors or ["Unknown"],
                 "citation_count": local_paper.citation_count or "Unknown",
@@ -196,7 +180,7 @@ class CitationService:
                 "concepts": [],
                 "url": local_paper.url,
                 "paper_id": paper_id,
-                "local_title": local_paper.canonical_title,
+                "local_title": local_paper.display_title,
                 "references": [],
                 "citations": []
             }
