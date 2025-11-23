@@ -253,7 +253,7 @@ async def chat_stream(
                     return
 
             # Orchestrate and execute retrieval to build prompt, then stream model output
-            prompt, source_papers = await app_state.ai_agent.build_prompt_with_orchestration_async(
+            prompt, source_papers, prompt_tokens, response_tokens = await app_state.ai_agent.build_prompt_with_orchestration_async(
                 query=message,
                 conversation_history=history[:-1],
                 paper_id=paper_id,
@@ -261,7 +261,12 @@ async def chat_stream(
             )
 
             # Stream model output
-            async for chunk_text, usage in app_state.ai_agent.stream_model_output_async(prompt, session_id):
+            async for chunk_text, usage in app_state.ai_agent.stream_model_output_async(
+                prompt, 
+                session_id,
+                pre_prompt_tokens=prompt_tokens,
+                pre_response_tokens=response_tokens
+            ):
                 if chunk_text:
                     full_response += chunk_text
                     yield f"data: {json.dumps({'type': 'chunk', 'text': chunk_text})}\n\n"
@@ -408,7 +413,7 @@ async def chat_stream_get(
                     yield f"data: {json.dumps({'type': 'error', 'message': f'Image generation failed: {str(e)}'})}\n\n"
                     return
             # Build prompt with retrieval orchestration
-            prompt, source_papers = await app_state.ai_agent.build_prompt_with_orchestration_async(
+            prompt, source_papers, prompt_tokens, response_tokens = await app_state.ai_agent.build_prompt_with_orchestration_async(
                 query=message,
                 conversation_history=history[:-1],
                 paper_id=paper_id,
@@ -416,7 +421,12 @@ async def chat_stream_get(
             )
 
             # Stream the model output
-            async for chunk_text, usage in app_state.ai_agent.stream_model_output_async(prompt, session_id):
+            async for chunk_text, usage in app_state.ai_agent.stream_model_output_async(
+                prompt, 
+                session_id,
+                pre_prompt_tokens=prompt_tokens,
+                pre_response_tokens=response_tokens
+            ):
                 if chunk_text:
                     full_response += chunk_text
                     yield f"data: {_json.dumps({'type': 'chunk', 'text': chunk_text})}\n\n"

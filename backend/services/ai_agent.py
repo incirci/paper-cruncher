@@ -86,7 +86,7 @@ class AIAgent:
         query: str,
         paper_id: Optional[str] = None,
         allowed_paper_ids: Optional[List[str]] = None,
-    ) -> dict:
+    ) -> Tuple[dict, int, int]:
         """
         Synchronous Orchestrator Agent: Analyzes query and issues specific commands for information gathering.
         
@@ -96,7 +96,7 @@ class AIAgent:
             allowed_paper_ids: Optional list of paper IDs allowed for this session
             
         Returns:
-            Dictionary with orchestration commands
+            Tuple of (orchestration commands dict, prompt_tokens, response_tokens)
         """
         paper_summaries = self.vector_db.get_paper_summaries()
 
@@ -206,14 +206,18 @@ For DENSITY, use: normal (default, 5 chunks) or high (deep dive, 20 chunks)
         if current_command:
             commands.append(current_command)
         
-        return {'commands': commands, 'strategy': strategy, 'reasoning': reasoning}
+        # Calculate tokens
+        prompt_tokens = self.count_tokens(orchestration_prompt)
+        response_tokens = self.count_tokens(response_text)
+        
+        return {'commands': commands, 'strategy': strategy, 'reasoning': reasoning}, prompt_tokens, response_tokens
 
     async def _orchestrate_retrieval_async(
         self,
         query: str,
         paper_id: Optional[str] = None,
         allowed_paper_ids: Optional[List[str]] = None,
-    ) -> dict:
+    ) -> Tuple[dict, int, int]:
         """
         Async Orchestrator Agent: Analyzes query and issues specific commands for information gathering.
         
@@ -226,7 +230,7 @@ For DENSITY, use: normal (default, 5 chunks) or high (deep dive, 20 chunks)
             allowed_paper_ids: Optional list of paper IDs allowed for this session
             
         Returns:
-            Dictionary with orchestration commands
+            Tuple of (orchestration commands dict, prompt_tokens, response_tokens)
         """
         paper_summaries = self.vector_db.get_paper_summaries()
 
@@ -336,7 +340,11 @@ For DENSITY, use: normal (default, 5 chunks) or high (deep dive, 20 chunks)
         if current_command:
             commands.append(current_command)
         
-        return {'commands': commands, 'strategy': strategy, 'reasoning': reasoning}
+        # Calculate tokens
+        prompt_tokens = self.count_tokens(orchestration_prompt)
+        response_tokens = self.count_tokens(response_text)
+        
+        return {'commands': commands, 'strategy': strategy, 'reasoning': reasoning}, prompt_tokens, response_tokens
 
     def _execute_worker_commands(
         self,
@@ -531,7 +539,7 @@ Answer:'''
     ) -> Tuple[str, List[str]]:
         """Build an Imagen prompt, leveraging RAG context to guide the visual content."""
         # Reuse orchestrator-worker to gather key chunks, respecting session paper scope
-        orchestration = self._orchestrate_retrieval(
+        orchestration, _, _ = self._orchestrate_retrieval(
             query,
             paper_id=paper_id,
             allowed_paper_ids=allowed_paper_ids,
@@ -654,7 +662,7 @@ Formatting Guidelines:
         conversation_history: List[Message],
         paper_id: Optional[str] = None,
         allowed_paper_ids: Optional[List[str]] = None,
-    ) -> tuple[str, List[str]]:
+    ) -> tuple[str, List[str], int, int]:
         """Build a prompt using the orchestrator-worker retrieval flow.
 
         Args:
@@ -662,9 +670,9 @@ Formatting Guidelines:
             conversation_history: Previous conversation messages
             paper_id: Optional paper ID to scope retrieval to a specific paper
 
-        Returns a tuple of (prompt, source_papers).
+        Returns a tuple of (prompt, source_papers, prompt_tokens, response_tokens).
         """
-        orchestration = self._orchestrate_retrieval(
+        orchestration, prompt_tokens, response_tokens = self._orchestrate_retrieval(
             query,
             paper_id=paper_id,
             allowed_paper_ids=allowed_paper_ids,
@@ -687,7 +695,7 @@ Formatting Guidelines:
         source_papers = self._extract_source_papers(relevant_chunks)
         enhanced_query = self._enhance_query(query)
         prompt = self._build_prompt(enhanced_query, context, conversation_history)
-        return prompt, source_papers
+        return prompt, source_papers, prompt_tokens, response_tokens
 
     async def build_prompt_with_orchestration_async(
         self,
@@ -695,9 +703,9 @@ Formatting Guidelines:
         conversation_history: List[Message],
         paper_id: Optional[str] = None,
         allowed_paper_ids: Optional[List[str]] = None,
-    ) -> tuple[str, List[str]]:
+    ) -> tuple[str, List[str], int, int]:
         """Build a prompt using the orchestrator-worker retrieval flow asynchronously."""
-        orchestration = await self._orchestrate_retrieval_async(
+        orchestration, prompt_tokens, response_tokens = await self._orchestrate_retrieval_async(
             query,
             paper_id=paper_id,
             allowed_paper_ids=allowed_paper_ids,
@@ -720,12 +728,14 @@ Formatting Guidelines:
         source_papers = self._extract_source_papers(relevant_chunks)
         enhanced_query = self._enhance_query(query)
         prompt = self._build_prompt(enhanced_query, context, conversation_history)
-        return prompt, source_papers
+        return prompt, source_papers, prompt_tokens, response_tokens
 
     async def stream_model_output_async(
         self,
         prompt: str,
         session_id: str,
+        pre_prompt_tokens: int = 0,
+        pre_response_tokens: int = 0,
     ) -> "AsyncIterator[tuple[str, Optional[TokenUsage]]]":
         """Stream model output for a prepared prompt asynchronously."""
         full_text = ""
@@ -745,11 +755,59 @@ Formatting Guidelines:
         # Estimate token usage using count_tokens
         prompt_tokens = self.count_tokens(prompt)
         response_tokens = self.count_tokens(full_text)
+        
+        # Combine with pre-usage (orchestrator tokens)
+        total_prompt = prompt_tokens + pre_prompt_tokens
+        total_response = response_tokens + pre_response_tokens
+        
         token_usage = TokenUsage(
             session_id=session_id,
-            prompt_tokens=prompt_tokens,
-            response_tokens=response_tokens,
-            total_tokens=prompt_tokens + response_tokens,
+            prompt_tokens=total_prompt,
+            response_tokens=total_response,
+            total_tokens=total_prompt + total_response,
             model=settings.agent.model,
         )
         yield "", token_usage
+
+    def generate_response_with_planning(
+        self,
+        query: str,
+        conversation_history: List[Message],
+        session_id: str,
+        paper_id: Optional[str] = None,
+        allowed_paper_ids: Optional[List[str]] = None,
+    ) -> Tuple[str, List[str], TokenUsage]:
+        """
+        Generate a response using the orchestrator-worker flow (synchronous).
+        
+        Returns:
+            Tuple of (response_text, source_papers, token_usage)
+        """
+        # Build prompt and get orchestration usage
+        prompt, source_papers, prompt_tokens, response_tokens = self.build_prompt_with_orchestration(
+            query,
+            conversation_history,
+            paper_id=paper_id,
+            allowed_paper_ids=allowed_paper_ids,
+        )
+
+        # Generate response
+        response = self.model.generate_content(prompt)
+        response_text = self._extract_text_from_response(response)
+
+        # Calculate total usage
+        gen_prompt_tokens = self.count_tokens(prompt)
+        gen_response_tokens = self.count_tokens(response_text)
+        
+        total_prompt = prompt_tokens + gen_prompt_tokens
+        total_response = response_tokens + gen_response_tokens
+        
+        token_usage = TokenUsage(
+            session_id=session_id,
+            prompt_tokens=total_prompt,
+            response_tokens=total_response,
+            total_tokens=total_prompt + total_response,
+            model=settings.agent.model,
+        )
+
+        return response_text, source_papers, token_usage
