@@ -21,12 +21,22 @@ class PDFProcessor:
         if settings.google_api_key:
             genai.configure(api_key=settings.google_api_key)
             model_name = getattr(settings.agent, "orchestrator_model", None) or settings.agent.model
+            
+            # Configure safety settings to be permissive for document analysis
+            safety_settings = {
+                genai.types.HarmCategory.HARM_CATEGORY_HARASSMENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
+                genai.types.HarmCategory.HARM_CATEGORY_HATE_SPEECH: genai.types.HarmBlockThreshold.BLOCK_NONE,
+                genai.types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: genai.types.HarmBlockThreshold.BLOCK_NONE,
+                genai.types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
+            }
+            
             self._title_model = genai.GenerativeModel(
                 model_name=model_name,
                 generation_config={
-                    "temperature": 0.0,
-                    "max_output_tokens": 64,
+                    "temperature": 0.1,
+                    "max_output_tokens": 1024,
                 },
+                safety_settings=safety_settings,
             )
         else:
             self._title_model = None
@@ -39,47 +49,62 @@ class PDFProcessor:
         if not self._title_model:
             return ""
 
-        snippet = (text or "").strip()
-        if not snippet:
+        full_text = (text or "").strip()
+        if not full_text:
             return ""
 
-        # Limit to first N characters, configurable via settings
-        max_len = getattr(settings.chunking, "title_snippet_chars", 3000)
-        if max_len <= 0:
-            max_len = 3000
-        snippet = snippet[:max_len]
+        # Get config values
+        min_len = getattr(settings.chunking, "min_title_snippet_chars", 2000)
+        max_len = getattr(settings.chunking, "title_snippet_chars", 10000)
+        
+        # Define attempts: first try small snippet, then max snippet if needed
+        attempts = []
+        
+        # If text is short, just one attempt with full text
+        if len(full_text) <= min_len:
+            attempts.append(full_text)
+        else:
+            # First attempt: min_len
+            attempts.append(full_text[:min_len])
+            # Second attempt: max_len (if we have more text than min_len)
+            if len(full_text) > min_len:
+                attempts.append(full_text[:max_len])
 
-        prompt = (
-            "You are an expert librarian. You are given the beginning of a PDF research paper. "
-            "Your task is to extract the MAIN TITLE of the paper.\n"
-            "Rules:\n"
-            "1. Ignore journal headers, volume numbers, dates, or conference names (e.g. 'Vol. 99', 'Proceedings of...').\n"
-            "2. Ignore author names or affiliations.\n"
-            "3. If the text is just a filename or garbage, return an empty string.\n"
-            "4. Return ONLY the title text. No quotes.\n"
-            "5. If the text starts with 'Abstract', the title is likely immediately preceding it. Look closely.\n\n"
-            f"Text: {snippet}"
-        )
-
-        try:
-            response = self._title_model.generate_content(prompt)
-            raw = (getattr(response, "text", "") or "").strip()
-        except Exception:
-            return ""
-
-        # Basic sanity checks: non-trivial, contains letters, reasonable length
-        if not raw or len(raw) < 5 or len(raw) > 400:
-            return ""
-        if not any(c.isalpha() for c in raw):
-            return ""
+        for i, snippet in enumerate(attempts):
+            # If this is a retry (i > 0), we might want to log it or just proceed
             
-        # Filter out common false positives (headers/journal names inferred as titles)
-        lower_raw = raw.lower()
-        if lower_raw.startswith("vol ") or lower_raw.startswith("vol.") or "issn" in lower_raw or "doi:" in lower_raw:
-            return ""
-            
-        # Normalize whitespace to keep titles single-line and tidy
-        return " ".join(raw.split())
+            prompt = (
+                "Extract the MAIN TITLE of the research paper from the text below.\n"
+                "WARNING: The text extraction might be out of order. The title might appear AFTER the 'Introduction' or 'Keywords'.\n"
+                "It might even appear at the very END of the text block.\n"
+                "Look for a standalone phrase that sounds like a research topic, often near 'Conference' or author names.\n"
+                "Ignore 'Procedia', 'Elsevier', 'ScienceDirect', dates, and volume numbers.\n"
+                "Return ONLY the title text.\n\n"
+                f"Text:\n{snippet}"
+            )
+
+            try:
+                response = self._title_model.generate_content(prompt)
+                raw = (getattr(response, "text", "") or "").strip()
+            except Exception:
+                continue
+
+            # Basic sanity checks: non-trivial, contains letters, reasonable length
+            if not raw or len(raw) < 5 or len(raw) > 400:
+                continue
+            if not any(c.isalpha() for c in raw):
+                continue
+                
+            # Filter out common false positives (headers/journal names inferred as titles)
+            lower_raw = raw.lower()
+            if lower_raw.startswith("vol ") or lower_raw.startswith("vol.") or "issn" in lower_raw:
+                continue
+                
+            # If we got a valid-looking title, return it immediately
+            return " ".join(raw.split())
+
+        # If all attempts failed
+        return ""
 
     def _build_canonical_title(self, filename: str, inferred_title: str) -> str:
         """Decide how to combine filename and inferred title.
