@@ -5,7 +5,6 @@ python-multipart
 
 # PDF Processing
 PyMuPDF
-pypdf
 
 # AI & Embeddings
 google-generativeai
@@ -13,23 +12,9 @@ google-generativeai
 # Vector Database
 chromadb
 
-# Database
-sqlalchemy
-aiosqlite
-
 # Configuration
 python-dotenv
 
 # Utilities
 pydantic
 pydantic-settings
-
-# Testing
-pytest
-pytest-asyncio
-httpx
-
-# Code Quality
-black
-flake8
-mypy
