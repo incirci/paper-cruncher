@@ -40,6 +40,7 @@ cruncher/
    - Vector database service (ChromaDB wrapper, semantic search, paper micro-summaries)
    - AI agent service (orchestrator-worker RAG)
    - Mindmap service (LLM-based graph generation + post-processing)
+   - Citation service (OpenAlex integration, hierarchical graph building)
    - Conversation management
    - Token tracking service
 
@@ -62,6 +63,10 @@ User Request → FastAPI → Service Layer → AI Agent / Vector DB
                  Gemini (LLM models)
                          ↓
                       Response
+
+User Request (Citation Map) → FastAPI → CitationService → OpenAlex API
+                                  ↓
+                              Response (Hierarchical JSON)
 ```
 
 ### Orchestrator-Worker RAG & Mindmap Pipeline
@@ -81,6 +86,7 @@ Index Papers → PDF Processor → VectorDBService.add_paper_chunks
 ### Deep Dive Retrieval
 
 The Orchestrator can now dynamically adjust retrieval density based on query complexity:
+
 - **Normal Density**: Fetches standard number of chunks (default: 10).
 - **High Density ("Deep Dive")**: Fetches 4x chunks (default: 40) for complex queries requiring comprehensive detail.
 - Controlled via `DENSITY` parameter in the Orchestrator's system prompt.
@@ -94,11 +100,11 @@ The Mindmap generation pipeline now supports Retrieval Augmented Generation (RAG
 3. **Context Injection**: Retrieved chunks are injected into the LLM prompt alongside paper summaries.
 4. **Generation**: The LLM uses both high-level summaries and specific details to build the tree.
 
-
 ## Technology Stack
 
 - **Backend**: FastAPI + Python 3.12
 - **AI Model**: Google Gemini 2.5 Flash
+- **External APIs**: OpenAlex (Citation Data)
 - **Vector DB**: ChromaDB
 - **Database**: SQLite (conversations)
 - **PDF Processing**: PyMuPDF
@@ -116,4 +122,3 @@ The Mindmap generation pipeline now supports Retrieval Augmented Generation (RAG
 - Orchestrator-Worker is the single retrieval mode (no toggles)
 - Canonical paper titles used consistently across backend and frontend
 - Mindmap generation is deterministic, concept-focused, and post-processed for normalization
-

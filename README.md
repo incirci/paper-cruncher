@@ -171,6 +171,21 @@ The app will be available at `http://localhost:8000`.
    - "Build a shallow two-level map that focuses only on application contexts, with papers grouped under their main real-world use cases."
    - "Emphasize methodological differences: group papers first by type of modeling or analysis approach, then list the papers under each approach."
 
+### Viewing the Citation Map
+
+1. **Access**: Click the "🔗 Citations" button (or similar icon) on a specific paper in the sidebar.
+2. **Data Source**: Powered by the **OpenAlex API** to fetch real-world citation data.
+3. **Structure**:
+   - **Root**: The selected paper.
+   - **Branches**: "References" (backward) and "Cited By" (forward).
+   - **Grouping**: Papers are automatically grouped by **Research Topic** (e.g., "Artificial Intelligence", "Public Health").
+4. **Filtering**:
+   - **Year Filter**: Filter references and citations by publication year range.
+   - **Auto-Detection**: The filter inputs automatically default to the min/max years found in the data.
+5. **Integration**:
+   - **Local Resolution**: If a cited paper exists in your local library, it is highlighted in green.
+   - **Full Titles**: Displays full paper titles with tooltips.
+
 ### Features
 
 - **Session Management**: Independent chat sessions with dedicated sidebar
@@ -261,6 +276,7 @@ cruncher/
 - `GET /api/papers/{paper_id}` - Get paper details
 - `POST /api/papers/upload` - Upload PDFs (with optional session_id)
 - `POST /api/papers/reindex` - Reindex all papers from papers/ folder
+- `GET /api/papers/{paper_id}/citations` - Get citation graph (OpenAlex)
 
 ### Mindmap
 
