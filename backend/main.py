@@ -18,6 +18,7 @@ from backend.services.pdf_processor import PDFProcessor
 from backend.services.token_tracker import TokenTracker
 from backend.services.vector_db import VectorDBService
 from backend.services.mindmap_service import MindmapService
+from backend.services.citation_service import CitationService
 
 
 class AppState:
@@ -35,6 +36,7 @@ class AppState:
         )
         self.token_tracker = TokenTracker(settings.get_conversation_db_path())
         self.mindmap_service = MindmapService(self.vector_db)
+        self.citation_service = CitationService(self.paper_manager)
 
 
 @asynccontextmanager
@@ -196,6 +198,10 @@ async def serve_mindmap_page():
         .node circle.has-children {
           fill: #4a90e2;
         }
+        .node circle.is-local {
+          fill: #2ecc71; /* Green for local papers */
+          stroke: #27ae60;
+        }
         .node text {
           font-size: 13px;
           font-family: system-ui, sans-serif;
@@ -237,13 +243,22 @@ async def serve_mindmap_page():
             const paperId = urlParams.get('paper_id');
             const query = urlParams.get('query');
             const sessionId = urlParams.get('session_id');
+            const mode = urlParams.get('mode'); // 'mindmap' (default) or 'citations'
             
-            // Build API URL with optional session_id, paper_id, and custom query
-            const apiParams = new URLSearchParams();
-            if (sessionId) apiParams.set('session_id', sessionId);
-            if (paperId) apiParams.set('paper_id', paperId);
-            if (query) apiParams.set('query', query);
-            const apiUrl = apiParams.toString() ? `/api/mindmap?${apiParams.toString()}` : '/api/mindmap';
+            let apiUrl;
+            
+            if (mode === 'citations' && paperId) {
+                // Citation graph mode
+                apiUrl = `/api/papers/${paperId}/citations`;
+                document.title = "Citation Map";
+            } else {
+                // Standard mindmap mode
+                const apiParams = new URLSearchParams();
+                if (sessionId) apiParams.set('session_id', sessionId);
+                if (paperId) apiParams.set('paper_id', paperId);
+                if (query) apiParams.set('query', query);
+                apiUrl = apiParams.toString() ? `/api/mindmap?${apiParams.toString()}` : '/api/mindmap';
+            }
             
             const res = await fetch(apiUrl);
             const data = await res.json();
@@ -321,7 +336,10 @@ async def serve_mindmap_page():
           
           nodeEnter.append('circle')
             .attr('r', 6)
-            .attr('class', d => d.children || d._children ? 'has-children' : '');
+            .attr('class', d => {
+                if (d.data.is_local) return 'is-local';
+                return d.children || d._children ? 'has-children' : '';
+            });
           
           // Add text with truncation
           const maxChars = 30; // Maximum characters before truncation
@@ -345,7 +363,10 @@ async def serve_mindmap_page():
           
           nodeUpdate.select('circle')
             .attr('r', 6)
-            .attr('class', d => d.children || d._children ? 'has-children' : '');
+            .attr('class', d => {
+                if (d.data.is_local) return 'is-local';
+                return d.children || d._children ? 'has-children' : '';
+            });
           
           // Exit
           const nodeExit = node.exit().transition()

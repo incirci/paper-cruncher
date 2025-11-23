@@ -18,3 +18,4 @@ python-dotenv
 # Utilities
 pydantic
 pydantic-settings
+httpx

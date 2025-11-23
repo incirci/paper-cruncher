@@ -582,6 +582,9 @@
                     ✏️
                 </button>
             </div>
+            <button class="index-button secondary" id="citationMapButton" onclick="openCitationMap()" style="width: 100%;">
+                🕸️ View Citation Map
+            </button>
         </div>
         <div class="papers-list" id="papersList">
             <div class="empty-state">Upload PDFs via the button or drop them here</div>
@@ -804,6 +807,16 @@
             window.open(url, '_blank');
         }
 
+        function openCitationMap(paperId) {
+            const targetId = paperId || selectedPaperId;
+            if (!targetId) {
+                alert('Please select a paper first to view its citation map.');
+                return;
+            }
+            const url = `/mindmap?mode=citations&paper_id=${targetId}`;
+            window.open(url, '_blank');
+        }
+
         function editMindmapQuery() {
             const baseDefault = 'Organize the content into meaningful themes and subtopics.';
             const scopedDefault = 'Organize this paper\'s content into its main topics and subtopics.';
@@ -859,6 +872,14 @@
                                 <div class="paper-name">${displayName}</div>
                                 <div class="paper-meta">${paper.page_count} pages</div>
                             </div>
+                            <button
+                                type="button"
+                                title="View Citation Map"
+                                style="border: none; background: transparent; cursor: pointer; font-size: 14px; padding: 0 4px;"
+                                onclick="event.stopPropagation(); openCitationMap('${paper.id}')"
+                            >
+                                🕸️
+                            </button>
                             <button
                                 type="button"
                                 title="Remove from this chat session"

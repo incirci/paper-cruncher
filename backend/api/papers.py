@@ -152,3 +152,23 @@ async def upload_papers(
         papers=uploaded_papers,
         total_count=len(uploaded_papers),
     )
+
+
+@router.get("/papers/{paper_id}/citations")
+async def get_paper_citations(request: Request, paper_id: str):
+    """
+    Get citation graph for a specific paper using Semantic Scholar.
+    
+    Returns a D3.js compatible tree structure with:
+    - References (backward citations)
+    - Citations (forward citations)
+    - Local paper resolution (is_local=True if we have the PDF)
+    """
+    app_state = request.app.state.app_state
+    
+    # Check if paper exists locally first
+    paper = app_state.paper_manager.get_paper(paper_id)
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found")
+        
+    return await app_state.citation_service.get_citation_graph(paper_id)
