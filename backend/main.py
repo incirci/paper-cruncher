@@ -283,9 +283,29 @@ async def serve_mindmap_page():
       <script>
         let root, svg, tree, g;
         let originalData = null;
+        let globalMinCitations = 0;
+        let globalMaxCitations = 0;
         const width = window.innerWidth;
         const height = window.innerHeight - 80;
         const margin = {top: 20, right: 120, bottom: 20, left: 200};
+
+        function getRadius(d) {
+             if (d.data.citation_count === undefined) return 6;
+             
+             const count = d.data.citation_count;
+             const minR = __MIN_R__;
+             const maxR = __MAX_R__;
+             
+             if (globalMaxCitations <= globalMinCitations) return minR;
+             
+             const minLog = Math.log(globalMinCitations + 1);
+             const maxLog = Math.log(globalMaxCitations + 1);
+             const valLog = Math.log(count + 1);
+             
+             // Linear interpolation on log scale
+             const t = (valLog - minLog) / (maxLog - minLog);
+             return minR + t * (maxR - minR);
+        }
         
         async function loadTree() {
           document.getElementById('status').textContent = 'Loading...';
@@ -321,8 +341,16 @@ async def serve_mindmap_page():
             // Calculate year ranges from data
             let refMin = 9999, refMax = 0;
             let citeMin = 9999, citeMax = 0;
+            globalMinCitations = 999999;
+            globalMaxCitations = 0;
 
             function findYears(node, context) {
+                // Track citations
+                if (node.citation_count !== undefined) {
+                    if (node.citation_count < globalMinCitations) globalMinCitations = node.citation_count;
+                    if (node.citation_count > globalMaxCitations) globalMaxCitations = node.citation_count;
+                }
+
                 let currentContext = context;
                 if (node.name && node.name.startsWith("References")) currentContext = 'ref';
                 if (node.name && node.name.startsWith("Cited By")) currentContext = 'cite';
@@ -344,6 +372,9 @@ async def serve_mindmap_page():
             }
             
             findYears(originalData, 'root');
+            
+            if (globalMinCitations === 999999) globalMinCitations = 0;
+            console.log("Citations range:", globalMinCitations, globalMaxCitations);
 
             const currentYear = new Date().getFullYear();
             if (refMin === 9999) refMin = 1900;
@@ -509,12 +540,7 @@ async def serve_mindmap_page():
             .on('click', click);
           
           nodeEnter.append('circle')
-            .attr('r', d => {
-                if (d.data.citation_count !== undefined) {
-                    return 4 + Math.log(d.data.citation_count + 1) * 1.5;
-                }
-                return 6;
-            })
+            .attr('r', d => getRadius(d))
             .attr('class', d => {
                 if (d.data.is_local) return 'is-local';
                 return d.children || d._children ? 'has-children' : '';
@@ -550,12 +576,7 @@ async def serve_mindmap_page():
             .attr('transform', d => `translate(${d.y},${d.x})`);
           
           nodeUpdate.select('circle')
-            .attr('r', d => {
-                if (d.data.citation_count !== undefined) {
-                    return 4 + Math.log(d.data.citation_count + 1) * 1.5;
-                }
-                return 6;
-            })
+            .attr('r', d => getRadius(d))
             .attr('class', d => {
                 if (d.data.is_local) return 'is-local';
                 return d.children || d._children ? 'has-children' : '';
@@ -612,6 +633,12 @@ async def serve_mindmap_page():
         let i = 0;
         
         function click(event, d) {
+          // If it's a leaf node with a URL, open it
+          if (d.data.url && !d.children && !d._children) {
+            window.open(d.data.url, '_blank');
+            return;
+          }
+
           if (d.children) {
             d._children = d.children;
             d.children = null;
@@ -662,4 +689,6 @@ async def serve_mindmap_page():
     </body>
     </html>
     """
+    html = html.replace("__MIN_R__", str(settings.mindmap.citation_node_min_size))
+    html = html.replace("__MAX_R__", str(settings.mindmap.citation_node_max_size))
     return HTMLResponse(content=html)

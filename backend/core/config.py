@@ -81,6 +81,8 @@ class MindmapConfig(BaseModel):
     min_themes: int = 3
     max_themes: int = 7
     node_name_max_length: int = 60
+    citation_node_min_size: int = 4
+    citation_node_max_size: int = 15
 
 
 class ImageConfig(BaseModel):

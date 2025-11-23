@@ -202,11 +202,27 @@ class MindmapService:
     def _safe_parse_json(self, text: str) -> Dict[str, Any]:
         """Extract and parse the first JSON object from text."""
         start = text.find("{")
-        end = text.rfind("}")
-        if start == -1 or end == -1 or end <= start:
+        if start == -1:
             raise ValueError("No JSON object found in model output")
-        payload = text[start : end + 1]
-        data = json.loads(payload)
+        
+        try:
+            # Use raw_decode to parse just the first valid JSON object
+            # and ignore any trailing text (markdown, commentary, etc.)
+            payload = text[start:]
+            decoder = json.JSONDecoder()
+            data, _ = decoder.raw_decode(payload)
+        except json.JSONDecodeError as e:
+            # Fallback: try to find the last closing brace if raw_decode fails
+            # (though raw_decode is usually more robust)
+            end = text.rfind("}")
+            if end == -1 or end <= start:
+                raise ValueError(f"JSON parsing failed: {e}")
+            try:
+                payload = text[start : end + 1]
+                data = json.loads(payload)
+            except json.JSONDecodeError as e2:
+                raise ValueError(f"JSON parsing failed: {e2}")
+
         # Basic shape validation for hierarchical tree
         if "name" not in data:
             data["name"] = "Research Topics"

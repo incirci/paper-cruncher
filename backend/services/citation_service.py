@@ -161,13 +161,8 @@ class CitationService:
             try:
                 with open(cache_path, 'r', encoding='utf-8') as f:
                     cached_data = json.load(f)
-                    # Check if cache is stale (missing citation_count in references)
-                    refs = cached_data.get("references", [])
-                    if refs and "citation_count" not in refs[0]:
-                        print(f"DEBUG: Cache for {short_id} is stale (missing citation_count), re-fetching")
-                    else:
-                        print(f"DEBUG: Loading {short_id} from cache")
-                        return cached_data
+                    print(f"DEBUG: Loading {short_id} from cache")
+                    return cached_data
             except Exception as e:
                 self.logger.warning(f"Failed to load cache for {short_id}: {e}")
 
@@ -226,7 +221,8 @@ class CitationService:
                     "authors": [{"name": a["author"]["display_name"]} for a in authors],
                     "primary_topic": primary_topic,
                     "concepts": concepts,
-                    "citation_count": w.get("cited_by_count", 0)
+                    "citation_count": w.get("cited_by_count", 0),
+                    "url": w.get("doi") or w.get("id")
                 }
 
             data = {
@@ -290,7 +286,8 @@ class CitationService:
                 "year": year,  # Store year for grouping
                 "topic": topic, # Store topic for potential grouping
                 "concept": primary_concept,
-                "citation_count": paper_obj.get("citation_count", 0)
+                "citation_count": paper_obj.get("citation_count", 0),
+                "url": paper_obj.get("url")
             }
             if local_id:
                 node["local_id"] = local_id
