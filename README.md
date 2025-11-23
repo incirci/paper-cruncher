@@ -31,15 +31,9 @@ Place your PDF journal articles in the `papers/` folder.
 python run.py
 ```
 
-**Docker Compose:**
+**Docker:**
 
-```bash
-# Create .env file with your API key first
-echo GOOGLE_API_KEY=YOUR_API_KEY > .env
-
-# Run
-docker compose up --build
-```
+See the [Docker](#docker) section below for containerized deployment instructions.
 
 The application will start at `http://localhost:8000`
 
@@ -88,7 +82,7 @@ The app will be available at `http://localhost:8000`.
 
 ### Adding Papers
 
-**Primary Method - Upload via Sidebar:**
+**Upload via Sidebar:**
 
 1. Click the "📎 Upload Papers" button in the sidebar
 2. Select one or more PDF files from your computer
@@ -97,11 +91,6 @@ The app will be available at `http://localhost:8000`.
    - Indexed into the vector database
    - Available immediately for chat and mindmap
 4. Uploaded papers persist across restarts
-
-**Alternative - Drop PDFs in papers/ folder:**
-
-- Place PDFs in `papers/` folder and click "📚 Index Papers" button
-- This method is maintained for backward compatibility (requires manual reindex)
 
 ### Managing Sessions
 
