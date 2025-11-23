@@ -70,7 +70,7 @@ class ChunkingConfig(BaseModel):
     chunk_size: int = 1000
     chunk_overlap: int = 200
     max_chunks_per_query: int = 5
-    title_snippet_chars: int = 1000
+    title_snippet_chars: int = 3000
 
 
 class MindmapConfig(BaseModel):

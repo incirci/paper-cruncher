@@ -109,7 +109,10 @@ async def reset_all_data():
 
     # Wipe on-disk data first.
     if data_root.exists():
-        rmtree(data_root)
+        # Use ignore_errors=True to do a best-effort deletion.
+        # This ensures that non-locked files (like uploads) are deleted
+        # even if DB files are locked by the running process.
+        rmtree(data_root, ignore_errors=True)
 
     # Also clear any in-memory / DB-backed conversation, token, and
     # paper state so list_sessions, debug endpoints, and /papers

@@ -173,7 +173,14 @@ class PaperManager:
         self.vector_db.reset()
         for metadata in list(self.papers.values()):
             try:
-                pdf_path = Path(metadata.file_path) if getattr(metadata, "file_path", None) else None
+                # Use correct attribute 'filepath'
+                pdf_path = Path(metadata.filepath) if getattr(metadata, "filepath", None) else None
+                
+                # Fallback: try to construct path from uploads dir if absolute path is missing/wrong
+                if not pdf_path or not pdf_path.exists():
+                    if metadata.filename:
+                        pdf_path = self.uploads_dir / metadata.filename
+
                 if pdf_path and pdf_path.exists():
                     # Re-process and re-add chunks
                     md, chunks = self.pdf_processor.process_paper(
@@ -182,6 +189,9 @@ class PaperManager:
                         chunk_overlap=settings.chunking.chunk_overlap,
                     )
                     self.vector_db.add_paper_chunks(chunks, md)
+                    
+                    # CRITICAL: Update the in-memory metadata with the newly inferred title/info
+                    self.papers[md.id] = md
             except Exception as e:
                 print(f"Error reindexing paper {metadata.id}: {e}")
 

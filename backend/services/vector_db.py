@@ -178,19 +178,23 @@ class VectorDBService:
             for pid, data in papers.items()
         ]
 
-    def get_paper_summaries(self) -> List[dict]:
-        """Get lightweight, concept-focused summaries of all papers.
+    def get_paper_summaries(self, paper_ids: Optional[List[str]] = None) -> List[dict]:
+        """Get lightweight, concept-focused summaries of papers.
 
-        This method builds a short "micro-summary" for each paper by
-        selecting chunks that are likely to contain substantive content
-        (problem, approach, findings) rather than boilerplate, and
-        compressing them into a single, dense paragraph.
+        Args:
+            paper_ids: Optional list of paper IDs to summarize. If None, summarizes all.
 
         Returns:
             List of dictionaries with paper_id, filename, canonical title,
             and summary content.
         """
         papers = self.get_all_papers()
+        
+        # Filter papers if specific IDs requested
+        if paper_ids is not None:
+            target_set = set(paper_ids)
+            papers = [p for p in papers if p["paper_id"] in target_set]
+
         summaries: List[dict] = []
 
         # Simple, domain-agnostic keywords that often signal substantive content

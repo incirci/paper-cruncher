@@ -44,16 +44,20 @@ class PDFProcessor:
             return ""
 
         # Limit to first N characters, configurable via settings
-        max_len = getattr(settings.chunking, "title_snippet_chars", 1000)
+        max_len = getattr(settings.chunking, "title_snippet_chars", 3000)
         if max_len <= 0:
-            max_len = 1000
+            max_len = 3000
         snippet = snippet[:max_len]
 
         prompt = (
-            "You are given the beginning of a PDF research paper. "
-            "From this fragment, extract the exact paper title if you can. "
-            "If you are not confident, return an empty string. "
-            "Respond with ONLY the title text, no quotes or commentary.\n\n"
+            "You are an expert librarian. You are given the beginning of a PDF research paper. "
+            "Your task is to extract the MAIN TITLE of the paper.\n"
+            "Rules:\n"
+            "1. Ignore journal headers, volume numbers, dates, or conference names (e.g. 'Vol. 99', 'Proceedings of...').\n"
+            "2. Ignore author names or affiliations.\n"
+            "3. If the text is just a filename or garbage, return an empty string.\n"
+            "4. Return ONLY the title text. No quotes.\n"
+            "5. If the text starts with 'Abstract', the title is likely immediately preceding it. Look closely.\n\n"
             f"Text: {snippet}"
         )
 
@@ -64,10 +68,16 @@ class PDFProcessor:
             return ""
 
         # Basic sanity checks: non-trivial, contains letters, reasonable length
-        if not raw or len(raw) < 5 or len(raw) > 200:
+        if not raw or len(raw) < 5 or len(raw) > 400:
             return ""
         if not any(c.isalpha() for c in raw):
             return ""
+            
+        # Filter out common false positives (headers/journal names inferred as titles)
+        lower_raw = raw.lower()
+        if lower_raw.startswith("vol ") or lower_raw.startswith("vol.") or "issn" in lower_raw or "doi:" in lower_raw:
+            return ""
+            
         # Normalize whitespace to keep titles single-line and tidy
         return " ".join(raw.split())
 
@@ -140,6 +150,32 @@ class PDFProcessor:
 
         # Use AI plus PDF metadata to infer a human-readable title
         inferred_title = doc_title.strip()
+        
+        # Ignore generic or useless metadata titles so we fall back to AI
+        # Use exact matches or startswith to avoid false positives (e.g. "presentation" in "representation")
+        bad_titles_exact = {
+            "untitled", "presentation", "document", "microsoft word", 
+            "unknown", "context unknown", "pdf", "converted"
+        }
+        
+        title_lower = inferred_title.lower().strip()
+        
+        # Check for exact matches or specific prefixes
+        is_bad = (
+            title_lower in bad_titles_exact or
+            title_lower.startswith("microsoft word -") or
+            title_lower.startswith("vol ") or  # "Vol 12"
+            title_lower.startswith("vol.") or
+            "cet vol" in title_lower  # Specific case mentioned by user
+        )
+        
+        if is_bad:
+            inferred_title = ""
+            
+        # Also ignore titles that look like filenames or are too short/numeric
+        if len(inferred_title) < 5 or inferred_title.lower().endswith(".pdf"):
+            inferred_title = ""
+
         if not inferred_title:
             inferred_title = self._infer_title_with_ai(first_page_text)
 

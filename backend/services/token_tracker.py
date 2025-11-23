@@ -29,6 +29,9 @@ class TokenTracker:
 
         Used by the admin reset endpoint for a clean slate.
         """
+        # Ensure schema exists (in case the file was deleted by rmtree)
+        self._init_db()
+
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM token_usage")

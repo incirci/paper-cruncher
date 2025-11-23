@@ -32,6 +32,9 @@ class ConversationManager:
         Used by the admin reset endpoint to ensure there is no
         historical state left in the conversation database.
         """
+        # Ensure schema exists (in case the file was deleted by rmtree)
+        self._init_db()
+
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM messages")

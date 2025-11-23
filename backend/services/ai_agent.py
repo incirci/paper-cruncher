@@ -134,7 +134,11 @@ DENSITY: normal
 STRATEGY: consolidate_all
 REASONING: Need overview of all papers
 
-Valid actions: fetch_summary (overview), fetch_details (specific search), fetch_comparison (compare papers)
+Valid actions: 
+1. fetch_summary: Use for high-level overviews, "list all papers", or general summaries. Ignores FOCUS.
+2. fetch_details: Use for specific questions where the answer might be in just a few papers. (e.g. "Find the paper that uses LSTM")
+3. fetch_comparison: Use for synthesizing specific information across multiple papers. (e.g. "Compare accuracy across all papers", "List the limitations of papers A and B", "Trace the evolution of X"). This searches for the FOCUS topic in each target paper.
+
 For PAPERS, use: ALL or specific filenames separated by commas
 For DENSITY, use: normal (default, 5 chunks) or high (deep dive, 20 chunks)
 '''
@@ -260,7 +264,11 @@ DENSITY: normal
 STRATEGY: consolidate_all
 REASONING: Need overview of all papers
 
-Valid actions: fetch_summary (overview), fetch_details (specific search), fetch_comparison (compare papers)
+Valid actions: 
+1. fetch_summary: Use for high-level overviews, "list all papers", or general summaries. Ignores FOCUS.
+2. fetch_details: Use for specific questions where the answer might be in just a few papers. (e.g. "Find the paper that uses LSTM")
+3. fetch_comparison: Use for synthesizing specific information across multiple papers. (e.g. "Compare accuracy across all papers", "List the limitations of papers A and B", "Trace the evolution of X"). This searches for the FOCUS topic in each target paper.
+
 For PAPERS, use: ALL or specific filenames separated by commas
 For DENSITY, use: normal (default, 5 chunks) or high (deep dive, 20 chunks)
 '''
@@ -357,6 +365,42 @@ For DENSITY, use: normal (default, 5 chunks) or high (deep dive, 20 chunks)
                     if allowed_paper_ids is None or pid in allowed_paper_ids:
                         target_ids.append(pid)
             
+            # Handle summary requests differently: fetch explicit summaries for ALL requested papers
+            if action == 'fetch_summary':
+                # Use the specialized summary retrieval method
+                # If target_ids is empty (e.g. "ALL" or fallback), use allowed_paper_ids or None (all)
+                effective_ids = target_ids if target_ids else allowed_paper_ids
+                summaries = self.vector_db.get_paper_summaries(paper_ids=effective_ids)
+                
+                for s in summaries:
+                    all_chunks.append({
+                        "id": f"summary_{s['paper_id']}",
+                        "content": f"Micro-Summary of {s['paper_title']}:\n{s['summary']}",
+                        "metadata": {
+                            "paper_id": s['paper_id'],
+                            "paper_title": s['paper_title'],
+                            "paper_filename": s['paper_filename'],
+                            "source": "micro_summary"
+                        }
+                    })
+                continue
+
+            # Handle comparison requests: ensure distribution across papers
+            # Instead of a global top-N search, we search each paper individually to ensure coverage.
+            if action == 'fetch_comparison' and target_ids:
+                # Determine chunks per paper. 
+                # If density is high, take more. If normal, take fewer to avoid context explosion.
+                chunks_per_paper = 5 if density == 'high' else 3
+                
+                for pid in target_ids:
+                    results = self.vector_db.search(
+                        query=f"{focus} {user_query}",
+                        n_results=chunks_per_paper,
+                        paper_ids=[pid]
+                    )
+                    all_chunks.extend(results)
+                continue
+
             # Construct search query
             search_query = f"{focus} {user_query}"
             
