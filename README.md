@@ -96,7 +96,7 @@ The app will be available at `http://localhost:8000`.
 
 **Sessions Sidebar:**
 
-1. Click the "💬 Sessions" button to open the sessions sidebar
+1. Click the "💬 Sessions" button to open the sessions sidebar (opens on the right)
 2. View all your saved sessions with:
    - Session ID (truncated)
    - Message count
@@ -105,6 +105,13 @@ The app will be available at `http://localhost:8000`.
 3. Click any session to switch to it (loads full chat history and papers)
 4. Delete sessions using the ✕ button next to each session
 5. Sessions are sorted by most recent activity
+
+**Duplicate Session:**
+
+1. Click the "Duplicate Session" button (copy icon) on any session in the sidebar
+2. Creates a new session with the same selected papers
+3. Does NOT copy the chat history (starts fresh with the same context)
+4. Useful for branching investigations from the same set of papers
 
 **New Session:**
 
@@ -263,6 +270,7 @@ cruncher/
 - `GET /api/chat/sessions` - List all sessions with metadata
 - `GET /api/chat/session/{session_id}` - Get session details
 - `POST /api/chat/session` - Create new session
+- `POST /api/chat/session/{session_id}/duplicate` - Duplicate session (papers only)
 - `DELETE /api/chat/session/{session_id}` - Delete session
 - `PATCH /api/chat/session/{session_id}/name` - Rename session
 - `POST /api/chat/session/{session_id}/context` - Update session papers
@@ -327,6 +335,7 @@ Edit `config.toml` to customize:
 ✅ RAG pipeline with Google Gemini 2.5 Pro  
 ✅ **Deep Dive Retrieval**: Automatically scales retrieval density for complex queries  
 ✅ **Session management with dedicated sidebar**  
+✅ **Session duplication (fork context without history)**
 ✅ **Independent session contexts (papers + chat + tokens)**  
 ✅ **Messages persist when papers change**  
 ✅ Conversation history management  

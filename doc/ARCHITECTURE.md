@@ -41,7 +41,7 @@ cruncher/
    - AI agent service (orchestrator-worker RAG)
    - Mindmap service (LLM-based graph generation + post-processing)
    - Citation service (OpenAlex integration, hierarchical graph building)
-   - Conversation management
+   - Conversation management (CRUD, duplication, history)
    - Token tracking service
 
 4. **Models Layer** (`backend/models/`)
