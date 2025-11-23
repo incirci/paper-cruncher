@@ -24,11 +24,21 @@ class PaperMetadata(BaseModel):
     # Format: "<actual_file_name> (<inferred_name_if_different_from_file_name>)"
     # Example: "dib-0004-0059.pdf (Detection of Physical Strain and Fatigue...)"
     canonical_title: str = ""
+    # Inferred title from AI analysis (used for OpenAlex search)
+    inferred_title: Optional[str] = None
     filepath: str
     page_count: int
     file_size: int
     created_at: datetime
     indexed_at: Optional[datetime] = None
+
+    # OpenAlex Metadata
+    openalex_id: Optional[str] = None
+    citation_count: Optional[int] = None
+    publication_year: Optional[int] = None
+    authors: List[str] = Field(default_factory=list)
+    primary_topic: Optional[str] = None
+    url: Optional[str] = None
 
 
 class PaperChunk(BaseModel):

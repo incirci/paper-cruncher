@@ -187,6 +187,36 @@
             background: #5a6268;
         }
 
+        .progress-container {
+            padding: 12px 20px;
+            border-top: 1px solid #e0e0e0;
+            background: #f9f9f9;
+            display: none;
+        }
+
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: #555;
+            margin-bottom: 6px;
+        }
+
+        .progress-track {
+            width: 100%;
+            height: 6px;
+            background: #e0e0e0;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: #007bff;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
         .papers-list {
             flex: 1;
             overflow-y: auto;
@@ -281,6 +311,11 @@
             flex-direction: column;
             gap: 16px;
             position: relative;
+            transition: background-color 0.3s ease;
+        }
+
+        .chat-container.specialized {
+            background-color: #f4faff;
         }
 
         .message {
@@ -607,6 +642,17 @@
                 </button>
             </div>
         </div>
+        
+        <div id="progressContainer" class="progress-container">
+            <div class="progress-header">
+                <span id="progressStatus">Processing...</span>
+                <span id="progressPercent">0%</span>
+            </div>
+            <div class="progress-track">
+                <div id="progressBar" class="progress-fill"></div>
+            </div>
+        </div>
+
         <div class="papers-list" id="papersList">
             <div class="empty-state">Upload PDFs via the button or drop them here</div>
         </div>
@@ -1462,6 +1508,15 @@
             }
         }
 
+        function updateChatBackground() {
+            const chatContainer = document.getElementById('chatContainer');
+            if (selectedPaperId) {
+                chatContainer.classList.add('specialized');
+            } else {
+                chatContainer.classList.remove('specialized');
+            }
+        }
+
         async function loadSession(id) {
             try {
                 const res = await fetch(`${API_URL}/chat/session/${id}`);
@@ -1503,6 +1558,7 @@
                     addMessage(msg.content, role, msg.source_papers || []);
                 }
 
+                updateChatBackground();
                 await updateTokenStats();
 
                 // Ensure we are scrolled to the latest message after reload
@@ -1834,6 +1890,62 @@
                 alert("Error duplicating session");
             }
         }
+
+        function initProgressStream() {
+            const evtSource = new EventSource(`${API_URL}/progress`);
+            const container = document.getElementById('progressContainer');
+            const bar = document.getElementById('progressBar');
+            const status = document.getElementById('progressStatus');
+            const percent = document.getElementById('progressPercent');
+
+            evtSource.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    
+                    if (data.status === 'processing') {
+                        container.style.display = 'block';
+                        const pct = Math.round(data.progress || 0);
+                        bar.style.width = `${pct}%`;
+                        status.textContent = data.message || 'Processing...';
+                        percent.textContent = `${pct}%`;
+                    } else if (data.status === 'completed') {
+                        bar.style.width = '100%';
+                        percent.textContent = '100%';
+                        status.textContent = 'Done!';
+                        
+                        // Refresh papers list if we just finished indexing
+                        if (sessionId) {
+                            loadSession(sessionId);
+                        } else {
+                            loadPapers();
+                        }
+
+                        setTimeout(() => {
+                            container.style.display = 'none';
+                            bar.style.width = '0%';
+                        }, 3000);
+                    } else if (data.status === 'error') {
+                        status.textContent = 'Error: ' + (data.message || 'Unknown error');
+                        status.style.color = '#b00020';
+                        setTimeout(() => {
+                            container.style.display = 'none';
+                            status.style.color = '';
+                        }, 5000);
+                    }
+                } catch (e) {
+                    console.error('Error parsing progress event', e);
+                }
+            };
+            
+            evtSource.onerror = function(err) {
+                // EventSource will try to reconnect automatically
+                // We can just log it for debugging
+                // console.debug("Progress stream connection lost, reconnecting...", err);
+            };
+        }
+
+        // Initialize progress stream
+        initProgressStream();
     </script>
 </body>
 </html>

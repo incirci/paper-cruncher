@@ -19,6 +19,9 @@ from backend.services.token_tracker import TokenTracker
 from backend.services.vector_db import VectorDBService
 from backend.services.mindmap_service import MindmapService
 from backend.services.citation_service import CitationService
+from backend.services.openalex_client import OpenAlexClient
+from backend.services.progress_manager import ProgressManager
+from fastapi.responses import StreamingResponse
 
 
 class AppState:
@@ -29,14 +32,17 @@ class AppState:
         # Initialize services
         self.vector_db = VectorDBService(settings.get_vector_db_path())
         self.pdf_processor = PDFProcessor()
-        self.paper_manager = PaperManager(self.pdf_processor, self.vector_db)
-        self.ai_agent = AIAgent(self.vector_db)
+        self.openalex_client = OpenAlexClient()
+        self.token_tracker = TokenTracker(settings.get_conversation_db_path())
+        self.paper_manager = PaperManager(self.pdf_processor, self.vector_db, self.openalex_client)
+        self.citation_service = CitationService(self.paper_manager, self.openalex_client)
+        self.mindmap_service = MindmapService(self.vector_db)
+        self.ai_agent = AIAgent(self.vector_db, self.citation_service)
         self.conversation_manager = ConversationManager(
             settings.get_conversation_db_path()
         )
-        self.token_tracker = TokenTracker(settings.get_conversation_db_path())
-        self.mindmap_service = MindmapService(self.vector_db)
-        self.citation_service = CitationService(self.paper_manager)
+        self.progress_manager = ProgressManager()
+
 
 
 @asynccontextmanager
@@ -47,6 +53,9 @@ async def lifespan(app: FastAPI):
     app.state.settings = settings  # Make settings accessible to routes
     yield
     # Shutdown (cleanup if needed)
+    if hasattr(app.state.app_state, "progress_manager"):
+        await app.state.app_state.progress_manager.stop()
+
 
 
 # Create FastAPI app
@@ -717,3 +726,12 @@ async def serve_mindmap_page():
     html = html.replace("__MIN_R__", str(settings.mindmap.citation_node_min_size))
     html = html.replace("__MAX_R__", str(settings.mindmap.citation_node_max_size))
     return HTMLResponse(content=html)
+
+
+@app.get("/api/progress")
+async def progress_stream():
+    """Stream progress updates via SSE."""
+    return StreamingResponse(
+        app.state.app_state.progress_manager.listen(),
+        media_type="text/event-stream"
+    )

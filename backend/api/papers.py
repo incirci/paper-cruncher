@@ -55,7 +55,14 @@ async def reindex_papers(request: Request):
     keeping uploaded papers intact.
     """
     app_state = request.app.state.app_state
-    app_state.paper_manager.reindex_all()
+    
+    async def progress_cb(current, total, message):
+        progress = (current / total) * 100 if total > 0 else 0
+        await app_state.progress_manager.emit("processing", progress, message, task_id="reindex")
+
+    await app_state.paper_manager.reindex_all(progress_callback=progress_cb)
+    
+    await app_state.progress_manager.emit("completed", 100, "Reindexing complete!", task_id="reindex")
 
     papers = app_state.paper_manager.list_papers()
 
@@ -102,9 +109,15 @@ async def upload_papers(
         raise HTTPException(status_code=400, detail="No files uploaded")
 
     uploaded_papers = []
+    total_files = len(files)
 
-    for upload in files:
+    for i, upload in enumerate(files):
         original_name = upload.filename or ""
+        
+        # Report progress
+        progress = (i / total_files) * 100
+        await app_state.progress_manager.emit("processing", progress, f"Processing {original_name}...", task_id="upload")
+
         if not original_name.lower().endswith(".pdf"):
             # Skip non-PDFs quietly for now
             continue
@@ -122,11 +135,14 @@ async def upload_papers(
 
             # Index the paper and collect the returned metadata so we can
             # return only the newly uploaded papers to the caller.
-            metadata = paper_manager.add_paper(target_path, original_filename=original_name)
+            metadata = await paper_manager.add_paper(target_path, original_filename=original_name)
             uploaded_papers.append(metadata)
         except Exception as exc:  # pragma: no cover - logged, but non-fatal
             # Log error to console and continue with remaining files
             print(f"Error processing uploaded paper {original_name}: {exc}")
+
+    # Final progress update
+    await app_state.progress_manager.emit("completed", 100, "Upload complete!", task_id="upload")
 
     # If a session_id is provided, attach uploaded papers to that session
     # and clear its chat history/token usage if the paper set changed.

@@ -43,6 +43,7 @@ cruncher/
    - Citation service (OpenAlex integration, hierarchical graph building, influence sorting, caching, URL resolution)
    - Conversation management (CRUD, duplication, history)
    - Token tracking service
+   - Progress manager (SSE-based real-time status updates)
 
 4. **Models Layer** (`backend/models/`)
    - Pydantic schemas and DTOs
@@ -53,7 +54,7 @@ cruncher/
    - Text chunking helpers
    - Misc helper functions
 
-### Data Flowbe
+### Data Flow
 
 ```text
 User Request → FastAPI → Service Layer → AI Agent / Vector DB
@@ -69,6 +70,8 @@ User Request (Citation Map) → FastAPI → CitationService → Local Cache / Op
                               Response (Hierarchical JSON with Citation Counts & URLs)
                                   ↓
                               D3.js (Logarithmic Sizing, Influence Sorting, Click Handlers)
+
+Background Tasks (Upload/Reindex) → ProgressManager → SSE Stream (/api/progress) → Frontend UI
 ```
 
 ### Orchestrator-Worker RAG & Mindmap Pipeline

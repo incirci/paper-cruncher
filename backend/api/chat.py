@@ -102,7 +102,7 @@ async def chat(request: Request, chat_request: ChatRequest):
             raise HTTPException(status_code=500, detail=f"Image generation failed: {str(e)}")
 
     # Normal RAG response
-    response_text, source_papers, token_usage = app_state.ai_agent.generate_response_with_planning(
+    response_text, source_papers, token_usage = await app_state.ai_agent.generate_response_with_planning(
         query=chat_request.message,
         conversation_history=history[:-1],  # Exclude the just-added user message
         session_id=session_id,

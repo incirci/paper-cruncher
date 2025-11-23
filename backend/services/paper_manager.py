@@ -8,21 +8,24 @@ from backend.core.config import settings
 from backend.models.schemas import PaperMetadata
 from backend.services.pdf_processor import PDFProcessor
 from backend.services.vector_db import VectorDBService
+from backend.services.openalex_client import OpenAlexClient
 
 
 class PaperManager:
     """Service for managing papers and their indexing."""
 
-    def __init__(self, pdf_processor: PDFProcessor, vector_db: VectorDBService):
+    def __init__(self, pdf_processor: PDFProcessor, vector_db: VectorDBService, openalex_client: Optional[OpenAlexClient] = None):
         """
         Initialize paper manager.
 
         Args:
             pdf_processor: PDF processing service
             vector_db: Vector database service
+            openalex_client: Optional OpenAlex client for metadata fetching
         """
         self.pdf_processor = pdf_processor
         self.vector_db = vector_db
+        self.openalex_client = openalex_client
         self.papers: Dict[str, PaperMetadata] = {}
         self.uploads_dir = settings.get_vector_db_path().parent / "uploads"
         self.metadata_file = settings.get_vector_db_path() / "papers_metadata.json"
@@ -31,11 +34,9 @@ class PaperManager:
         self._load_metadata()
 
     def _load_metadata(self):
-        """Load paper metadata from disk, limited to uploads.
+        """Load paper metadata from disk.
 
-        Any metadata entries whose underlying file path is not inside the
-        uploads directory are skipped. This effectively drops legacy
-        folder-based papers while keeping only uploaded PDFs.
+        Only loads papers that exist in the configured uploads directory.
         """
         if self.metadata_file.exists():
             try:
@@ -44,28 +45,12 @@ class PaperManager:
                     for paper_data in data:
                         metadata = PaperMetadata(**paper_data)
 
-                        # Check if file exists in local uploads dir (handles Docker vs Local path mismatch)
+                        # robustly resolve file path: check uploads dir first
                         if metadata.filename:
                             local_path = self.uploads_dir / metadata.filename
                             if local_path.exists():
                                 metadata.filepath = str(local_path)
                                 self.papers[metadata.id] = metadata
-                                continue
-
-                        file_path = getattr(metadata, "filepath", None)
-                        if not file_path:
-                            continue
-
-                        path_obj = Path(file_path)
-                        try:
-                            # Only keep papers under uploads_dir
-                            if not path_obj.is_absolute():
-                                path_obj = (self.uploads_dir / path_obj).resolve()
-                            if self.uploads_dir in path_obj.parents:
-                                self.papers[metadata.id] = metadata
-                        except Exception:
-                            # If resolution fails, skip this entry
-                            continue
             except Exception as e:
                 print(f"Error loading paper metadata: {e}")
 
@@ -79,7 +64,7 @@ class PaperManager:
         except Exception as e:
             print(f"Error saving paper metadata: {e}")
 
-    def _index_paper(self, pdf_path: Path, original_filename: str | None = None):
+    async def _index_paper(self, pdf_path: Path, original_filename: str | None = None):
         """Index a single paper."""
         # Process paper
         metadata, chunks = self.pdf_processor.process_paper(
@@ -88,6 +73,55 @@ class PaperManager:
             chunk_overlap=settings.chunking.chunk_overlap,
             original_filename=original_filename,
         )
+
+        # Fetch OpenAlex metadata if client is available
+        if self.openalex_client:
+            try:
+                # Determine search title: prefer explicit inferred title if available
+                search_title = metadata.inferred_title
+                
+                # Fallback: try to parse from canonical title if inferred is missing
+                if not search_title:
+                    search_title = metadata.canonical_title
+                    if metadata.filename and search_title.startswith(metadata.filename):
+                        remainder = search_title[len(metadata.filename):].strip()
+                        if remainder.startswith("(") and remainder.endswith(")"):
+                            candidate = remainder[1:-1].strip()
+                            if candidate:
+                                search_title = candidate
+                
+                # Final cleanup
+                if search_title:
+                    if search_title.lower().endswith(".pdf"):
+                        search_title = search_title[:-4]
+                    
+                    # If title is still just the filename, clean it up
+                    if search_title == metadata.filename or search_title == metadata.filename[:-4]:
+                         search_title = search_title.replace("_", " ").replace("-", " ")
+
+                    work_id = await self.openalex_client.search_paper(search_title)
+                    if work_id:
+                        # Use lightweight fetch for indexing (no references/citations graph yet)
+                        details = await self.openalex_client.fetch_basic_metadata(work_id)
+                        
+                        # Update metadata
+                        metadata.openalex_id = work_id
+                        metadata.citation_count = details.get("citation_count")
+                        metadata.publication_year = details.get("year")
+                        metadata.authors = [a["name"] for a in details.get("authors", [])]
+                        metadata.primary_topic = details.get("primary_topic")
+                        metadata.url = details.get("url")
+                        
+                        # Update chunks metadata with new info
+                        for chunk in chunks:
+                            chunk.metadata.update({
+                                "openalex_id": work_id,
+                                "year": details.get("year"),
+                                "citation_count": details.get("citation_count"),
+                                "authors": ", ".join(metadata.authors)
+                            })
+            except Exception as e:
+                print(f"Error fetching OpenAlex metadata for {metadata.filename}: {e}")
 
         # Add to vector database
         self.vector_db.add_paper_chunks(chunks, metadata)
@@ -106,7 +140,7 @@ class PaperManager:
         """Get list of all papers (uploads only)."""
         return list(self.papers.values())
 
-    def add_paper(self, pdf_path: Path, original_filename: str | None = None) -> PaperMetadata:
+    async def add_paper(self, pdf_path: Path, original_filename: str | None = None) -> PaperMetadata:
         """
         Add a new paper to the collection.
 
@@ -128,7 +162,7 @@ class PaperManager:
                 continue
 
         # Otherwise index the paper (this will populate self.papers and persist metadata)
-        self._index_paper(pdf_path, original_filename=original_filename)
+        await self._index_paper(pdf_path, original_filename=original_filename)
 
         # Return the metadata we just stored
         # We rely on PDFProcessor to assign a stable id for this path,
@@ -158,12 +192,15 @@ class PaperManager:
         # Save updated metadata
         self._save_metadata()
 
-    def reindex_all(self):
+    async def reindex_all(self, progress_callback=None):
         """Reindex all known papers from metadata.
 
         This rebuilds the vector database using the persisted
         `papers_metadata.json` entries (including uploaded papers),
         instead of scanning a filesystem folder.
+        
+        Args:
+            progress_callback: Optional async function(current, total, message)
         """
         # Reload existing metadata from disk as source of truth
         self.papers.clear()
@@ -171,7 +208,14 @@ class PaperManager:
 
         # Clear vector DB and re-add all papers using stored paths
         self.vector_db.reset()
-        for metadata in list(self.papers.values()):
+        
+        papers_list = list(self.papers.values())
+        total_papers = len(papers_list)
+        
+        for i, metadata in enumerate(papers_list):
+            if progress_callback:
+                await progress_callback(i, total_papers, f"Indexing {metadata.filename}...")
+                
             try:
                 # Use correct attribute 'filepath'
                 pdf_path = Path(metadata.filepath) if getattr(metadata, "filepath", None) else None
@@ -183,17 +227,16 @@ class PaperManager:
 
                 if pdf_path and pdf_path.exists():
                     # Re-process and re-add chunks
-                    md, chunks = self.pdf_processor.process_paper(
-                        pdf_path,
-                        chunk_size=settings.chunking.chunk_size,
-                        chunk_overlap=settings.chunking.chunk_overlap,
-                    )
-                    self.vector_db.add_paper_chunks(chunks, md)
+                    # Note: We call _index_paper logic manually here to avoid double-saving metadata
+                    # or we can just call _index_paper if we want to refresh OpenAlex data too.
+                    # Let's call _index_paper to refresh everything including OpenAlex data.
+                    await self._index_paper(pdf_path, original_filename=metadata.filename)
                     
-                    # CRITICAL: Update the in-memory metadata with the newly inferred title/info
-                    self.papers[md.id] = md
             except Exception as e:
                 print(f"Error reindexing paper {metadata.id}: {e}")
+        
+        if progress_callback:
+            await progress_callback(total_papers, total_papers, "Reindexing complete!")
 
         # Save metadata back
         self._save_metadata()

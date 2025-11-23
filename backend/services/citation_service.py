@@ -1,28 +1,20 @@
 """Citation service for building citation graphs using Semantic Scholar API."""
 
-import asyncio
 import logging
-import json
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
-
-import httpx
+from typing import Any, Dict, Optional
 
 from backend.services.paper_manager import PaperManager
+from backend.services.openalex_client import OpenAlexClient
 from backend.core.config import settings
 
 
 class CitationService:
     """Service for fetching citation graphs and resolving local papers using OpenAlex."""
 
-    BASE_URL = "https://api.openalex.org"
-
-    def __init__(self, paper_manager: PaperManager):
+    def __init__(self, paper_manager: PaperManager, openalex_client: Optional[OpenAlexClient] = None):
         self.paper_manager = paper_manager
+        self.openalex_client = openalex_client or OpenAlexClient()
         self.logger = logging.getLogger(__name__)
-        # Ensure cache directory exists
-        self.cache_dir = settings.get_vector_db_path().parent / "cache" / "citations"
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
 
     async def get_citation_graph(self, paper_id: str) -> Dict[str, Any]:
         """
@@ -69,7 +61,12 @@ class CitationService:
 
         # 2. Search OpenAlex
         try:
-            work_id = await self._search_paper(search_title)
+            # Check if we already have the OpenAlex ID in metadata
+            work_id = local_paper.openalex_id
+            
+            if not work_id:
+                work_id = await self.openalex_client.search_paper(search_title)
+            
             if not work_id:
                 return {
                     "name": local_paper.canonical_title,
@@ -79,7 +76,7 @@ class CitationService:
                 }
 
             # 3. Fetch Graph Data
-            graph_data = await self._fetch_details(work_id)
+            graph_data = await self.openalex_client.fetch_details(work_id)
 
         except Exception as e:
             self.logger.error(f"OpenAlex API error: {e}")
@@ -93,156 +90,116 @@ class CitationService:
         # 4. Build Visualization Tree
         return self._build_tree(local_paper.canonical_title, graph_data)
 
-    async def _make_request(self, client: httpx.AsyncClient, url: str, params: Dict[str, Any]) -> httpx.Response:
-        """Make a request with retry logic."""
-        retries = 3
-        base_delay = 1.0
+    async def get_paper_metadata(self, paper_id: str, fetch_full_details: bool = False) -> Optional[Dict[str, Any]]:
+        """
+        Fetch metadata for a specific paper from OpenAlex.
         
-        for i in range(retries):
-            try:
-                response = await client.get(url, params=params)
-                if response.status_code == 429:
-                    if i == retries - 1:
-                        response.raise_for_status()
-                    
-                    wait_time = base_delay * (2 ** i)
-                    self.logger.warning(f"Rate limited (429) by OpenAlex. Retrying in {wait_time}s...")
-                    print(f"Rate limited (429) by OpenAlex. Retrying in {wait_time}s...")
-                    await asyncio.sleep(wait_time)
-                    continue
-                
-                response.raise_for_status()
-                return response
-            except httpx.HTTPStatusError as e:
-                if e.response.status_code == 429:
-                     if i == retries - 1:
-                        raise e
-                     wait_time = base_delay * (2 ** i)
-                     self.logger.warning(f"Rate limited (429) by OpenAlex. Retrying in {wait_time}s...")
-                     print(f"Rate limited (429) by OpenAlex. Retrying in {wait_time}s...")
-                     await asyncio.sleep(wait_time)
-                     continue
-                raise e
-            except Exception as e:
-                # Handle connection errors etc
-                if i == retries - 1:
-                    raise e
-                wait_time = base_delay * (2 ** i)
-                print(f"Request failed ({e}). Retrying in {wait_time}s...")
-                await asyncio.sleep(wait_time)
-        
-        raise Exception("Max retries exceeded")
-
-    async def _search_paper(self, title: str) -> Optional[str]:
-        """Search for a paper by title and return its OpenAlex ID."""
-        print(f"DEBUG: Searching OpenAlex for: {title}")
-        async with httpx.AsyncClient() as client:
-            params = {
-                "filter": f"title.search:{title}",
-                "per-page": 1
-            }
-            try:
-                response = await self._make_request(client, f"{self.BASE_URL}/works", params=params)
-                data = response.json()
-                
-                results = data.get("results", [])
-                if results:
-                    return results[0]["id"]
-            except Exception as e:
-                self.logger.error(f"Search failed: {e}")
+        Args:
+            paper_id: The ID of the paper in our local system.
+            fetch_full_details: If True, fetch full references and citations (cached).
+                               If False, prefer local summary metadata if available.
+            
+        Returns:
+            Dictionary containing metadata (title, year, authors, citation_count, topics, etc.)
+            or None if not found.
+        """
+        # 1. Get local paper details
+        local_paper = self.paper_manager.get_paper(paper_id)
+        if not local_paper:
             return None
 
-    async def _fetch_details(self, work_id: str) -> Dict[str, Any]:
-        """Fetch references and citations for a paper from OpenAlex."""
-        short_id = work_id.split("/")[-1]
-        cache_path = self.cache_dir / f"oa_{short_id}.json"
+        # If we already have metadata in the local paper object, return it directly!
+        # This is the "Indexing-time" optimization.
+        # BUT: Only if we don't need the full graph (references/citations)
+        if not fetch_full_details and local_paper.openalex_id and local_paper.publication_year:
+             return {
+                "title": local_paper.canonical_title, # Use canonical title or fetched title?
+                "year": local_paper.publication_year,
+                "authors": local_paper.authors,
+                "citation_count": local_paper.citation_count,
+                "primary_topic": local_paper.primary_topic,
+                "concepts": [], # We might not have stored concepts in metadata yet
+                "url": local_paper.url,
+                "paper_id": paper_id,
+                "local_title": local_paper.canonical_title,
+                # We might need to fetch full details if references/citations are requested
+                # but for basic metadata questions, this is enough.
+                # However, the agent might ask for references.
+                # So let's fetch full details if we need references/citations.
+             }
+
+        # Determine best search title
+        search_title = local_paper.canonical_title
         
-        if cache_path.exists():
-            try:
-                with open(cache_path, 'r', encoding='utf-8') as f:
-                    cached_data = json.load(f)
-                    print(f"DEBUG: Loading {short_id} from cache")
-                    return cached_data
-            except Exception as e:
-                self.logger.warning(f"Failed to load cache for {short_id}: {e}")
-
-        print(f"DEBUG: Fetching details for {short_id} from OpenAlex")
-        async with httpx.AsyncClient() as client:
-            # 1. Fetch Work Details
-            response = await self._make_request(client, f"{self.BASE_URL}/works/{work_id}", params={})
-            work = response.json()
+        if local_paper.filename and search_title.startswith(local_paper.filename):
+            remainder = search_title[len(local_paper.filename):].strip()
+            if remainder.startswith("(") and remainder.endswith(")"):
+                candidate = remainder[1:-1].strip()
+                if candidate:
+                    search_title = candidate
+        
+        if search_title.lower().endswith(".pdf"):
+            search_title = search_title[:-4]
             
-            # 2. Fetch References
-            ref_ids = work.get("referenced_works", [])
-            references = []
+        if search_title == local_paper.filename or search_title == local_paper.filename[:-4]:
+             search_title = search_title.replace("_", " ").replace("-", " ")
+
+        # 2. Search OpenAlex
+        try:
+            work_id = local_paper.openalex_id
+            if not work_id:
+                work_id = await self.openalex_client.search_paper(search_title)
             
-            # Batch fetch references details
-            chunk_size = 50
-            for i in range(0, len(ref_ids), chunk_size):
-                chunk = ref_ids[i:i + chunk_size]
-                # chunk contains full URLs, we need just the IDs (W...)
-                chunk_short_ids = [url.split("/")[-1] for url in chunk]
-                ids_str = "|".join(chunk_short_ids)
-                
-                try:
-                    ref_resp = await self._make_request(
-                        client,
-                        f"{self.BASE_URL}/works", 
-                        params={"filter": f"openalex_id:{ids_str}", "per-page": chunk_size}
-                    )
-                    ref_data = ref_resp.json().get("results", [])
-                    references.extend(ref_data)
-                except Exception as e:
-                    print(f"DEBUG: OpenAlex ref batch failed: {e}")
-                await asyncio.sleep(0.1)
-
-            # 3. Fetch Citations (Works that reference this work)
-            citations = []
-            try:
-                cite_resp = await self._make_request(
-                    client,
-                    f"{self.BASE_URL}/works",
-                    params={"filter": f"referenced_works:{work_id}", "per-page": 200}
-                )
-                citations = cite_resp.json().get("results", [])
-            except Exception as e:
-                print(f"DEBUG: OpenAlex citations fetch failed: {e}")
-
-            # 4. Normalize Data
-            def normalize_work(w):
-                authors = w.get("authorships", [])
-                topics = w.get("topics", [])
-                primary_topic = topics[0]["display_name"] if topics else "Unknown Topic"
-                concepts = [c["display_name"] for c in w.get("concepts", [])[:3]]
-                
+            if not work_id:
                 return {
-                    "title": w.get("title"),
-                    "year": w.get("publication_year"),
-                    "authors": [{"name": a["author"]["display_name"]} for a in authors],
-                    "primary_topic": primary_topic,
-                    "concepts": concepts,
-                    "citation_count": w.get("cited_by_count", 0),
-                    "url": w.get("doi") or w.get("id")
+                    "title": local_paper.canonical_title,
+                    "year": local_paper.publication_year or "Unknown",
+                    "authors": local_paper.authors or ["Unknown"],
+                    "citation_count": local_paper.citation_count or "Unknown",
+                    "primary_topic": local_paper.primary_topic or "Unknown",
+                    "concepts": [],
+                    "url": local_paper.url,
+                    "paper_id": paper_id,
+                    "local_title": local_paper.canonical_title,
+                    "references": [],
+                    "citations": []
                 }
 
-            data = {
-                "title": work.get("title"),
-                "year": work.get("publication_year"),
-                "authors": [{"name": a["author"]["display_name"]} for a in work.get("authorships", [])],
-                "primary_topic": work.get("topics", [])[0]["display_name"] if work.get("topics") else "Unknown Topic",
-                "concepts": [c["display_name"] for c in work.get("concepts", [])[:3]],
-                "references": [normalize_work(r) for r in references],
-                "citations": [normalize_work(c) for c in citations]
-            }
+            # 3. Fetch Details (this uses cache)
+            data = await self.openalex_client.fetch_details(work_id)
             
-            # Save to cache
-            try:
-                with open(cache_path, 'w', encoding='utf-8') as f:
-                    json.dump(data, f)
-            except Exception as e:
-                self.logger.warning(f"Failed to save cache for {work_id}: {e}")
-                
-            return data
+            # 4. Format for Agent
+            authors = [a["name"] for a in data.get("authors", [])]
+            
+            return {
+                "title": data.get("title"),
+                "year": data.get("year"),
+                "authors": authors,
+                "citation_count": data.get("citation_count", 0) if "citation_count" in data else len(data.get("citations", [])),
+                "primary_topic": data.get("primary_topic"),
+                "concepts": data.get("concepts", []),
+                "url": data.get("url"),
+                "paper_id": paper_id,
+                "local_title": local_paper.canonical_title,
+                "references": data.get("references", []),
+                "citations": data.get("citations", [])
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error fetching metadata for {paper_id}: {e}")
+            return {
+                "title": local_paper.canonical_title,
+                "year": local_paper.publication_year or "Unknown",
+                "authors": local_paper.authors or ["Unknown"],
+                "citation_count": local_paper.citation_count or "Unknown",
+                "primary_topic": local_paper.primary_topic or "Unknown",
+                "concepts": [],
+                "url": local_paper.url,
+                "paper_id": paper_id,
+                "local_title": local_paper.canonical_title,
+                "references": [],
+                "citations": []
+            }
 
     def _build_tree(self, root_title: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """Convert API response to D3.js tree format with local resolution."""

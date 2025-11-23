@@ -211,6 +211,7 @@ class PDFProcessor:
             id=paper_id,
             filename=logical_filename,
             canonical_title=canonical_title,
+            inferred_title=inferred_title,
             filepath=str(pdf_path),
             page_count=page_count,
             file_size=file_size,

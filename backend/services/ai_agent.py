@@ -8,19 +8,22 @@ import google.generativeai as genai
 from backend.core.config import settings
 from backend.models.schemas import Message, MessageRole, TokenUsage
 from backend.services.vector_db import VectorDBService
+from backend.services.citation_service import CitationService
 
 
 class AIAgent:
     """AI Agent for answering questions about papers using RAG."""
 
-    def __init__(self, vector_db: VectorDBService):
+    def __init__(self, vector_db: VectorDBService, citation_service: Optional[CitationService] = None):
         """
         Initialize AI Agent with Gemini.
 
         Args:
             vector_db: Vector database service for semantic search
+            citation_service: Optional citation service for metadata retrieval
         """
         self.vector_db = vector_db
+        self.citation_service = citation_service
 
         # Configure Gemini
         genai.configure(api_key=settings.google_api_key)
@@ -81,45 +84,16 @@ class AIAgent:
 
         return "\n".join(t.strip() for t in texts if t and t.strip()).strip()
 
-    def _orchestrate_retrieval(
-        self,
-        query: str,
-        paper_id: Optional[str] = None,
-        allowed_paper_ids: Optional[List[str]] = None,
-    ) -> Tuple[dict, int, int]:
-        """
-        Synchronous Orchestrator Agent: Analyzes query and issues specific commands for information gathering.
+    def _build_orchestration_prompt(self, query: str, paper_summaries: List[dict]) -> str:
+        """Build the prompt for the orchestration agent."""
+        # Build a list of paper titles and filenames to help the orchestrator match user queries to files
+        paper_entries = [f"- {p.get('paper_title', 'Unknown')} (Filename: {p['paper_filename']})" for p in paper_summaries]
+        papers_list = "\n".join(paper_entries)
         
-        Args:
-            query: User's question
-            paper_id: Optional paper ID to scope retrieval to a specific paper
-            allowed_paper_ids: Optional list of paper IDs allowed for this session
-            
-        Returns:
-            Tuple of (orchestration commands dict, prompt_tokens, response_tokens)
-        """
-        paper_summaries = self.vector_db.get_paper_summaries()
+        return f'''You are a retrieval coordinator. Analyze this question and decide how to gather information.
 
-        # First, restrict to session-allowed papers if provided
-        if allowed_paper_ids:
-            allowed_set = set(allowed_paper_ids)
-            paper_summaries = [
-                p for p in paper_summaries if p.get("paper_id") in allowed_set
-            ]
-        
-        # Further filter to specific paper if paper_id is provided
-        if paper_id:
-            paper_summaries = [p for p in paper_summaries if p.get('paper_id') == paper_id]
-            if not paper_summaries:
-                raise RuntimeError(f"Paper with ID {paper_id} not found")
-        
-        # Build a simple list of paper names only (avoid potentially unsafe content in summaries)
-        paper_names = [p['paper_filename'] for p in paper_summaries]
-        papers_list = ", ".join(paper_names)
-        
-        orchestration_prompt = f'''You are a retrieval coordinator. Analyze this question and decide how to gather information.
-
-Available papers: {papers_list}
+Available papers:
+{papers_list}
 
 Question: {query}
 
@@ -138,10 +112,76 @@ Valid actions:
 1. fetch_summary: Use for high-level overviews, "list all papers", or general summaries. Ignores FOCUS.
 2. fetch_details: Use for specific questions where the answer might be in just a few papers. (e.g. "Find the paper that uses LSTM")
 3. fetch_comparison: Use for synthesizing specific information across multiple papers. (e.g. "Compare accuracy across all papers", "List the limitations of papers A and B", "Trace the evolution of X"). This searches for the FOCUS topic in each target paper.
+4. fetch_metadata: Use for questions about citation counts, publication years, authors, venues, or impact. (e.g. "Which paper has the most citations?", "Who are the authors of paper X?", "When was paper Y published?"). Ignores FOCUS.
+5. fetch_references: Use when asked to list references or what a paper cites. (e.g. "What papers does X cite?", "List references of Y"). Ignores FOCUS.
+6. fetch_cited_by: Use when asked to list papers that cite a paper. (e.g. "Who cited paper X?", "List papers citing Y"). Ignores FOCUS.
 
-For PAPERS, use: ALL or specific filenames separated by commas
+For PAPERS, use: ALL or specific Filenames (e.g. paper.pdf) separated by commas. Do NOT use titles in the PAPERS field, only the Filenames listed above.
 For DENSITY, use: normal (default, 5 chunks) or high (deep dive, 20 chunks)
 '''
+
+    def _parse_orchestration_response(self, response_text: str, paper_summaries: List[dict]) -> dict:
+        """Parse the text response from the orchestrator into structured commands."""
+        commands = []
+        strategy = 'consolidate_all'
+        reasoning = ''
+        
+        lines = response_text.split('\n')
+        current_command = {}
+        
+        for line in lines:
+            line = line.strip()
+            if line.startswith('COMMAND'):
+                if current_command:
+                    commands.append(current_command)
+                current_command = {}
+            elif line.startswith('ACTION:'):
+                current_command['action'] = line.split(':', 1)[1].strip().lower()
+            elif line.startswith('PAPERS:'):
+                papers_str = line.split(':', 1)[1].strip()
+                if papers_str.upper() == 'ALL':
+                    current_command['papers'] = [p['paper_filename'] for p in paper_summaries]
+                else:
+                    current_command['papers'] = [p.strip() for p in papers_str.split(',') if p.strip()]
+            elif line.startswith('FOCUS:'):
+                current_command['focus'] = line.split(':', 1)[1].strip()
+            elif line.startswith('DENSITY:'):
+                current_command['density'] = line.split(':', 1)[1].strip().lower()
+            elif line.startswith('STRATEGY:'):
+                strategy = line.split(':', 1)[1].strip().lower()
+            elif line.startswith('REASONING:'):
+                reasoning = line.split(':', 1)[1].strip()
+        
+        if current_command:
+            commands.append(current_command)
+            
+        return {'commands': commands, 'strategy': strategy, 'reasoning': reasoning}
+
+    def _orchestrate_retrieval(
+        self,
+        query: str,
+        paper_id: Optional[str] = None,
+        allowed_paper_ids: Optional[List[str]] = None,
+    ) -> Tuple[dict, int, int]:
+        """
+        Synchronous Orchestrator Agent: Analyzes query and issues specific commands for information gathering.
+        """
+        paper_summaries = self.vector_db.get_paper_summaries()
+
+        # First, restrict to session-allowed papers if provided
+        if allowed_paper_ids:
+            allowed_set = set(allowed_paper_ids)
+            paper_summaries = [
+                p for p in paper_summaries if p.get("paper_id") in allowed_set
+            ]
+        
+        # Further filter to specific paper if paper_id is provided
+        if paper_id:
+            paper_summaries = [p for p in paper_summaries if p.get('paper_id') == paper_id]
+            if not paper_summaries:
+                raise RuntimeError(f"Paper with ID {paper_id} not found")
+        
+        orchestration_prompt = self._build_orchestration_prompt(query, paper_summaries)
         
         try:
             orchestration_response = self.orchestrator_model.generate_content(
@@ -151,66 +191,17 @@ For DENSITY, use: normal (default, 5 chunks) or high (deep dive, 20 chunks)
         except Exception as e:  # noqa: BLE001
             raise RuntimeError(f"Orchestration failed: {str(e)}")
 
-        # Check if response was blocked or has issues
-        if not getattr(orchestration_response, "candidates", None):
-            raise RuntimeError("Orchestration blocked: no candidates returned.")
-        
-        # Check finish reason
-        candidate = orchestration_response.candidates[0]
-        
-        # Extract text without relying on quick accessor to avoid ValueError
-        response_text = ""
-        try:
-            content = candidate.content
-            if content and getattr(content, "parts", None):
-                texts: List[str] = []
-                for part in content.parts:
-                    if getattr(part, "text", None):
-                        texts.append(part.text)
-                response_text = "\n".join(texts).strip()
-        except Exception:
-            response_text = ""
+        response_text = self._extract_text_from_response(orchestration_response)
         if not response_text:
             raise RuntimeError("Orchestration produced empty content after successful completion.")
         
-        commands = []
-        strategy = 'consolidate_all'
-        reasoning = ''
-        
-        lines = response_text.split('\n')
-        current_command = {}
-        
-        for line in lines:
-            line = line.strip()
-            if line.startswith('COMMAND'):
-                if current_command:
-                    commands.append(current_command)
-                current_command = {}
-            elif line.startswith('ACTION:'):
-                current_command['action'] = line.split(':', 1)[1].strip().lower()
-            elif line.startswith('PAPERS:'):
-                papers_str = line.split(':', 1)[1].strip()
-                if papers_str.upper() == 'ALL':
-                    current_command['papers'] = [p['paper_filename'] for p in paper_summaries]
-                else:
-                    current_command['papers'] = [p.strip() for p in papers_str.split(',') if p.strip()]
-            elif line.startswith('FOCUS:'):
-                current_command['focus'] = line.split(':', 1)[1].strip()
-            elif line.startswith('DENSITY:'):
-                current_command['density'] = line.split(':', 1)[1].strip().lower()
-            elif line.startswith('STRATEGY:'):
-                strategy = line.split(':', 1)[1].strip().lower()
-            elif line.startswith('REASONING:'):
-                reasoning = line.split(':', 1)[1].strip()
-        
-        if current_command:
-            commands.append(current_command)
+        result = self._parse_orchestration_response(response_text, paper_summaries)
         
         # Calculate tokens
         prompt_tokens = self.count_tokens(orchestration_prompt)
         response_tokens = self.count_tokens(response_text)
         
-        return {'commands': commands, 'strategy': strategy, 'reasoning': reasoning}, prompt_tokens, response_tokens
+        return result, prompt_tokens, response_tokens
 
     async def _orchestrate_retrieval_async(
         self,
@@ -220,17 +211,6 @@ For DENSITY, use: normal (default, 5 chunks) or high (deep dive, 20 chunks)
     ) -> Tuple[dict, int, int]:
         """
         Async Orchestrator Agent: Analyzes query and issues specific commands for information gathering.
-        
-        This agent specializes in understanding the big picture and coordinating retrieval.
-        It decides WHAT information to fetch and FROM WHERE.
-        
-        Args:
-            query: User's question
-            paper_id: Optional paper ID to scope retrieval to a specific paper
-            allowed_paper_ids: Optional list of paper IDs allowed for this session
-            
-        Returns:
-            Tuple of (orchestration commands dict, prompt_tokens, response_tokens)
         """
         paper_summaries = self.vector_db.get_paper_summaries()
 
@@ -247,35 +227,7 @@ For DENSITY, use: normal (default, 5 chunks) or high (deep dive, 20 chunks)
             if not paper_summaries:
                 raise RuntimeError(f"Paper with ID {paper_id} not found")
         
-        # Build a simple list of paper names only (avoid potentially unsafe content in summaries)
-        paper_names = [p['paper_filename'] for p in paper_summaries]
-        papers_list = ", ".join(paper_names)
-        
-        orchestration_prompt = f'''You are a retrieval coordinator. Analyze this question and decide how to gather information.
-
-Available papers: {papers_list}
-
-Question: {query}
-
-Create retrieval commands in this exact format:
-
-COMMAND 1:
-ACTION: fetch_summary
-PAPERS: ALL
-FOCUS: main topics
-DENSITY: normal
-
-STRATEGY: consolidate_all
-REASONING: Need overview of all papers
-
-Valid actions: 
-1. fetch_summary: Use for high-level overviews, "list all papers", or general summaries. Ignores FOCUS.
-2. fetch_details: Use for specific questions where the answer might be in just a few papers. (e.g. "Find the paper that uses LSTM")
-3. fetch_comparison: Use for synthesizing specific information across multiple papers. (e.g. "Compare accuracy across all papers", "List the limitations of papers A and B", "Trace the evolution of X"). This searches for the FOCUS topic in each target paper.
-
-For PAPERS, use: ALL or specific filenames separated by commas
-For DENSITY, use: normal (default, 5 chunks) or high (deep dive, 20 chunks)
-'''
+        orchestration_prompt = self._build_orchestration_prompt(query, paper_summaries)
         
         try:
             orchestration_response = await self.orchestrator_model.generate_content_async(
@@ -285,68 +237,19 @@ For DENSITY, use: normal (default, 5 chunks) or high (deep dive, 20 chunks)
         except Exception as e:  # noqa: BLE001
             raise RuntimeError(f"Orchestration failed: {str(e)}")
 
-        # Check if response was blocked or has issues
-        if not getattr(orchestration_response, "candidates", None):
-            raise RuntimeError("Orchestration blocked: no candidates returned.")
-        
-        # Check finish reason
-        candidate = orchestration_response.candidates[0]
-        
-        # Extract text without relying on quick accessor to avoid ValueError
-        response_text = ""
-        try:
-            content = candidate.content
-            if content and getattr(content, "parts", None):
-                texts: List[str] = []
-                for part in content.parts:
-                    if getattr(part, "text", None):
-                        texts.append(part.text)
-                response_text = "\n".join(texts).strip()
-        except Exception:
-            response_text = ""
+        response_text = self._extract_text_from_response(orchestration_response)
         if not response_text:
             raise RuntimeError("Orchestration produced empty content after successful completion.")
         
-        commands = []
-        strategy = 'consolidate_all'
-        reasoning = ''
-        
-        lines = response_text.split('\n')
-        current_command = {}
-        
-        for line in lines:
-            line = line.strip()
-            if line.startswith('COMMAND'):
-                if current_command:
-                    commands.append(current_command)
-                current_command = {}
-            elif line.startswith('ACTION:'):
-                current_command['action'] = line.split(':', 1)[1].strip().lower()
-            elif line.startswith('PAPERS:'):
-                papers_str = line.split(':', 1)[1].strip()
-                if papers_str.upper() == 'ALL':
-                    current_command['papers'] = [p['paper_filename'] for p in paper_summaries]
-                else:
-                    current_command['papers'] = [p.strip() for p in papers_str.split(',') if p.strip()]
-            elif line.startswith('FOCUS:'):
-                current_command['focus'] = line.split(':', 1)[1].strip()
-            elif line.startswith('DENSITY:'):
-                current_command['density'] = line.split(':', 1)[1].strip().lower()
-            elif line.startswith('STRATEGY:'):
-                strategy = line.split(':', 1)[1].strip().lower()
-            elif line.startswith('REASONING:'):
-                reasoning = line.split(':', 1)[1].strip()
-        
-        if current_command:
-            commands.append(current_command)
+        result = self._parse_orchestration_response(response_text, paper_summaries)
         
         # Calculate tokens
         prompt_tokens = self.count_tokens(orchestration_prompt)
         response_tokens = self.count_tokens(response_text)
         
-        return {'commands': commands, 'strategy': strategy, 'reasoning': reasoning}, prompt_tokens, response_tokens
+        return result, prompt_tokens, response_tokens
 
-    def _execute_worker_commands(
+    async def _execute_worker_commands(
         self,
         commands: List[dict],
         allowed_paper_ids: Optional[List[str]] = None,
@@ -378,12 +281,40 @@ For DENSITY, use: normal (default, 5 chunks) or high (deep dive, 20 chunks)
                 # Use the specialized summary retrieval method
                 # If target_ids is empty (e.g. "ALL" or fallback), use allowed_paper_ids or None (all)
                 effective_ids = target_ids if target_ids else allowed_paper_ids
+                
+                # If effective_ids is None (ALL), resolve to actual IDs to detect missing ones
+                if effective_ids is None and self.citation_service:
+                    effective_ids = [p.id for p in self.citation_service.paper_manager.list_papers()]
+                    if allowed_paper_ids:
+                        effective_ids = [pid for pid in effective_ids if pid in allowed_paper_ids]
+
                 summaries = self.vector_db.get_paper_summaries(paper_ids=effective_ids)
+                found_ids = {s['paper_id'] for s in summaries}
                 
                 for s in summaries:
+                    pid = s['paper_id']
+                    content = f"Micro-Summary of {s['paper_title']}:\n{s['summary']}"
+                    
+                    # Enrich with metadata if available
+                    if self.citation_service:
+                        try:
+                            # Use fetch_full_details=False to use local cache/basic info only
+                            meta = await self.citation_service.get_paper_metadata(pid, fetch_full_details=False)
+                            if meta:
+                                meta_str = (
+                                    f"\n\nMetadata:\n"
+                                    f"- Year: {meta.get('year', 'N/A')}\n"
+                                    f"- Authors: {', '.join(meta.get('authors', []))}\n"
+                                    f"- Citations: {meta.get('citation_count', 'N/A')}\n"
+                                    f"- Topic: {meta.get('primary_topic', 'N/A')}"
+                                )
+                                content += meta_str
+                        except Exception:
+                            pass # Fail gracefully on metadata fetch
+
                     all_chunks.append({
                         "id": f"summary_{s['paper_id']}",
-                        "content": f"Micro-Summary of {s['paper_title']}:\n{s['summary']}",
+                        "content": content,
                         "metadata": {
                             "paper_id": s['paper_id'],
                             "paper_title": s['paper_title'],
@@ -391,6 +322,128 @@ For DENSITY, use: normal (default, 5 chunks) or high (deep dive, 20 chunks)
                             "source": "micro_summary"
                         }
                     })
+                
+                # Fallback for papers missing from VectorDB
+                if effective_ids and self.citation_service:
+                    for pid in effective_ids:
+                        if pid not in found_ids:
+                            try:
+                                meta = await self.citation_service.get_paper_metadata(pid, fetch_full_details=False)
+                                if meta:
+                                    content = (
+                                        f"Micro-Summary of {meta.get('title', 'Unknown')}:\n"
+                                        f"(Content not indexed, metadata only)\n"
+                                        f"- Year: {meta.get('year', 'N/A')}\n"
+                                        f"- Authors: {', '.join(meta.get('authors', []))}\n"
+                                        f"- Citations: {meta.get('citation_count', 'N/A')}\n"
+                                        f"- Topic: {meta.get('primary_topic', 'N/A')}"
+                                    )
+                                    all_chunks.append({
+                                        "id": f"summary_fallback_{pid}",
+                                        "content": content,
+                                        "metadata": {
+                                            "paper_id": pid,
+                                            "paper_title": meta.get('title'),
+                                            "paper_filename": meta.get('local_title'),
+                                            "source": "metadata_fallback"
+                                        }
+                                    })
+                            except Exception:
+                                pass
+                continue
+
+            # Handle metadata requests
+            if action == 'fetch_metadata' and self.citation_service:
+                effective_ids = target_ids if target_ids else allowed_paper_ids
+                if effective_ids:
+                    for pid in effective_ids:
+                        meta = await self.citation_service.get_paper_metadata(pid)
+                        if meta:
+                            content = (
+                                f"Metadata for {meta['title']}:\n"
+                                f"- Year: {meta['year']}\n"
+                                f"- Authors: {', '.join(meta['authors'])}\n"
+                                f"- Citation Count: {meta['citation_count']}\n"
+                                f"- Primary Topic: {meta['primary_topic']}\n"
+                                f"- Concepts: {', '.join(meta['concepts'])}\n"
+                                f"- URL: {meta['url']}\n"
+                            )
+                            all_chunks.append({
+                                "id": f"metadata_{pid}",
+                                "content": content,
+                                "metadata": {
+                                    "paper_id": pid,
+                                    "paper_title": meta['title'],
+                                    "paper_filename": meta['local_title'],
+                                    "source": "openalex_metadata"
+                                }
+                            })
+                continue
+
+            # Handle references requests
+            if action == 'fetch_references' and self.citation_service:
+                effective_ids = target_ids if target_ids else allowed_paper_ids
+                if effective_ids:
+                    for pid in effective_ids:
+                        meta = await self.citation_service.get_paper_metadata(pid, fetch_full_details=True)
+                        if meta:
+                            refs = meta.get('references', [])
+                            # Format list of references
+                            refs_list = "\n".join([f"- {r.get('title')} ({r.get('year')}, {r.get('citation_count')} citations)" for r in refs])
+                            
+                            if not refs_list:
+                                if meta.get('citation_count') == 'Unknown':
+                                    refs_list = "Reference data not available (Paper not found in external database)."
+                                else:
+                                    refs_list = "No references found."
+                                
+                            content = (
+                                f"References for {meta['title']}:\n"
+                                f"{refs_list}\n"
+                            )
+                            all_chunks.append({
+                                "id": f"refs_{pid}",
+                                "content": content,
+                                "metadata": {
+                                    "paper_id": pid,
+                                    "paper_title": meta['title'],
+                                    "paper_filename": meta['local_title'],
+                                    "source": "openalex_references"
+                                }
+                            })
+                continue
+
+            # Handle cited_by requests
+            if action == 'fetch_cited_by' and self.citation_service:
+                effective_ids = target_ids if target_ids else allowed_paper_ids
+                if effective_ids:
+                    for pid in effective_ids:
+                        meta = await self.citation_service.get_paper_metadata(pid, fetch_full_details=True)
+                        if meta:
+                            cites = meta.get('citations', [])
+                            # Format list of citations
+                            cites_list = "\n".join([f"- {c.get('title')} ({c.get('year')}, {c.get('citation_count')} citations)" for c in cites])
+                            
+                            if not cites_list:
+                                if meta.get('citation_count') == 'Unknown':
+                                    cites_list = "Citation data not available (Paper not found in external database)."
+                                else:
+                                    cites_list = "No citations found."
+                                
+                            content = (
+                                f"Papers citing {meta['title']}:\n"
+                                f"{cites_list}\n"
+                            )
+                            all_chunks.append({
+                                "id": f"cited_by_{pid}",
+                                "content": content,
+                                "metadata": {
+                                    "paper_id": pid,
+                                    "paper_title": meta['title'],
+                                    "paper_filename": meta['local_title'],
+                                    "source": "openalex_cited_by"
+                                }
+                            })
                 continue
 
             # Handle comparison requests: ensure distribution across papers
@@ -656,7 +709,37 @@ Formatting Guidelines:
 """
 
 
-    def build_prompt_with_orchestration(
+    async def _build_final_prompt_from_orchestration(
+        self,
+        orchestration: dict,
+        prompt_tokens: int,
+        response_tokens: int,
+        query: str,
+        conversation_history: List[Message],
+        allowed_paper_ids: Optional[List[str]] = None,
+    ) -> tuple[str, List[str], int, int]:
+        """Helper to execute worker commands and build the final prompt."""
+        relevant_chunks = await self._execute_worker_commands(
+            orchestration["commands"],
+            allowed_paper_ids=allowed_paper_ids,
+            user_query=query,
+        )
+        if not relevant_chunks:
+            raise RuntimeError(
+                f"Worker found no chunks for orchestrated commands. "
+                f"Strategy: {orchestration.get('strategy')}, Reasoning: {orchestration.get('reasoning')}"
+            )
+        context = self._build_context(
+            relevant_chunks,
+            include_overview=True,
+            allowed_paper_ids=allowed_paper_ids,
+        )
+        source_papers = self._extract_source_papers(relevant_chunks)
+        enhanced_query = self._enhance_query(query)
+        prompt = self._build_prompt(enhanced_query, context, conversation_history)
+        return prompt, source_papers, prompt_tokens, response_tokens
+
+    async def build_prompt_with_orchestration(
         self,
         query: str,
         conversation_history: List[Message],
@@ -677,25 +760,9 @@ Formatting Guidelines:
             paper_id=paper_id,
             allowed_paper_ids=allowed_paper_ids,
         )
-        relevant_chunks = self._execute_worker_commands(
-            orchestration["commands"],
-            allowed_paper_ids=allowed_paper_ids,
-            user_query=query,
+        return await self._build_final_prompt_from_orchestration(
+            orchestration, prompt_tokens, response_tokens, query, conversation_history, allowed_paper_ids
         )
-        if not relevant_chunks:
-            raise RuntimeError(
-                f"Worker found no chunks for orchestrated commands. "
-                f"Strategy: {orchestration.get('strategy')}, Reasoning: {orchestration.get('reasoning')}"
-            )
-        context = self._build_context(
-            relevant_chunks,
-            include_overview=True,
-            allowed_paper_ids=allowed_paper_ids,
-        )
-        source_papers = self._extract_source_papers(relevant_chunks)
-        enhanced_query = self._enhance_query(query)
-        prompt = self._build_prompt(enhanced_query, context, conversation_history)
-        return prompt, source_papers, prompt_tokens, response_tokens
 
     async def build_prompt_with_orchestration_async(
         self,
@@ -710,25 +777,9 @@ Formatting Guidelines:
             paper_id=paper_id,
             allowed_paper_ids=allowed_paper_ids,
         )
-        relevant_chunks = self._execute_worker_commands(
-            orchestration["commands"],
-            allowed_paper_ids=allowed_paper_ids,
-            user_query=query,
+        return await self._build_final_prompt_from_orchestration(
+            orchestration, prompt_tokens, response_tokens, query, conversation_history, allowed_paper_ids
         )
-        if not relevant_chunks:
-            raise RuntimeError(
-                f"Worker found no chunks for orchestrated commands. "
-                f"Strategy: {orchestration.get('strategy')}, Reasoning: {orchestration.get('reasoning')}"
-            )
-        context = self._build_context(
-            relevant_chunks,
-            include_overview=True,
-            allowed_paper_ids=allowed_paper_ids,
-        )
-        source_papers = self._extract_source_papers(relevant_chunks)
-        enhanced_query = self._enhance_query(query)
-        prompt = self._build_prompt(enhanced_query, context, conversation_history)
-        return prompt, source_papers, prompt_tokens, response_tokens
 
     async def stream_model_output_async(
         self,
@@ -769,7 +820,7 @@ Formatting Guidelines:
         )
         yield "", token_usage
 
-    def generate_response_with_planning(
+    async def generate_response_with_planning(
         self,
         query: str,
         conversation_history: List[Message],
@@ -784,7 +835,7 @@ Formatting Guidelines:
             Tuple of (response_text, source_papers, token_usage)
         """
         # Build prompt and get orchestration usage
-        prompt, source_papers, prompt_tokens, response_tokens = self.build_prompt_with_orchestration(
+        prompt, source_papers, prompt_tokens, response_tokens = await self.build_prompt_with_orchestration(
             query,
             conversation_history,
             paper_id=paper_id,

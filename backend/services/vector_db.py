@@ -153,8 +153,9 @@ class VectorDBService:
         Returns:
             List of dictionaries with paper_id, paper_filename and paper_title
         """
-        # Get all metadata
-        results = self.collection.get()
+        # Get all metadata (limit to 10k to avoid truncation, though unlikely to hit soon)
+        # ChromaDB's default limit can vary, so we explicit set a high one.
+        results = self.collection.get(limit=10000, include=["metadatas"])
         
         # Extract unique papers
         papers = {}

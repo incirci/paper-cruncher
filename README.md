@@ -21,7 +21,14 @@ pip install -r requirements.txt
 
 ### 3. Add Papers
 
-Place your PDF journal articles in the `papers/` folder.
+**Recommended:** Use the web interface to upload papers.
+
+1. Start the application.
+2. Click "📎 Upload Papers" in the sidebar.
+3. Select PDF files. They will be saved to `data/uploads/` and indexed automatically.
+
+**Legacy:**
+Placing papers in the `papers/` folder is supported for backward compatibility but requires manual re-indexing.
 
 ### 3. Run the Application
 
@@ -246,12 +253,15 @@ cruncher/
 │   │   └── config.py     # Settings loader
 │   ├── services/         # Business logic
 │   │   ├── ai_agent.py           # Gemini integration
+│   │   ├── citation_service.py   # OpenAlex citation graph
 │   │   ├── conversation_manager.py  # Session & message management
+│   │   ├── mindmap_service.py    # Knowledge graph generation
+│   │   ├── openalex_client.py    # OpenAlex API client
 │   │   ├── paper_manager.py      # Paper metadata
 │   │   ├── pdf_processor.py      # PDF extraction
+│   │   ├── progress_manager.py   # SSE progress streaming
 │   │   ├── token_tracker.py      # Token monitoring
-│   │   ├── vector_db.py          # ChromaDB
-│   │   └── mindmap_service.py    # Knowledge graph generation
+│   │   └── vector_db.py          # ChromaDB
 │   ├── models/           # Data models
 │   │   └── schemas.py    # Pydantic schemas
 │   └── main.py           # FastAPI app
@@ -291,7 +301,7 @@ cruncher/
 - `GET /api/papers` - List all papers (or filtered by session)
 - `GET /api/papers/{paper_id}` - Get paper details
 - `POST /api/papers/upload` - Upload PDFs (with optional session_id)
-- `POST /api/papers/reindex` - Reindex all papers from papers/ folder
+- `POST /api/papers/reindex` - Rebuild vector index from metadata (useful after resets or manual changes)
 - `GET /api/papers/{paper_id}/citations` - Get citation graph (OpenAlex)
 
 ### Mindmap
