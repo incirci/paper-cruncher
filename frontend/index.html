@@ -468,45 +468,79 @@
         }
 
         .input-container {
-            padding: 20px;
-            border-top: 1px solid #e0e0e0;
+            padding: 24px;
             display: flex;
-            gap: 12px;
+            justify-content: center;
+            background: white;
+        }
+
+        .input-wrapper {
+            position: relative;
+            width: 100%;
+            max-width: 768px;
+            display: flex;
+            align-items: flex-end;
+            background: #f4f4f4;
+            border-radius: 26px;
+            padding: 10px;
+            border: 1px solid transparent;
+            transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+        }
+
+        .input-wrapper:focus-within {
+            border-color: #d9d9d9;
+            background: white;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.05);
         }
 
         .input-box {
             flex: 1;
-            padding: 12px 16px;
-            border: 1px solid #e0e0e0;
-            border-radius: 8px;
-            font-size: 14px;
+            padding: 4px 8px;
+            padding-right: 40px;
+            border: none;
+            background: transparent;
+            font-size: 16px;
             font-family: inherit;
             resize: none;
+            max-height: 200px;
+            overflow-y: auto;
+            line-height: 1.5;
         }
 
         .input-box:focus {
             outline: none;
-            border-color: #007bff;
         }
 
         .send-button {
-            padding: 12px 24px;
-            background: #007bff;
+            position: absolute;
+            right: 8px;
+            bottom: 8px;
+            width: 32px;
+            height: 32px;
+            background: #e5e5e5;
             color: white;
             border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 500;
+            border-radius: 50%;
+            cursor: default;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
         }
 
-        .send-button:hover {
+        .send-button.active {
+            background: #007bff;
+            cursor: pointer;
+        }
+
+        .send-button.active:hover {
             background: #0056b3;
         }
 
-        .send-button:disabled {
-            background: #ccc;
-            cursor: not-allowed;
+        .send-button svg {
+            width: 16px;
+            height: 16px;
+            fill: white;
         }
 
         .loading {
@@ -598,13 +632,19 @@
         </button>
 
         <div class="input-container">
-            <textarea 
-                class="input-box" 
-                id="messageInput" 
-                placeholder="Ask a question about the papers..."
-                rows="1"
-            ></textarea>
-            <button class="send-button" id="sendButton" onclick="sendMessage()">Send</button>
+            <div class="input-wrapper">
+                <textarea 
+                    class="input-box" 
+                    id="messageInput" 
+                    placeholder="Message Journal Assistant..."
+                    rows="1"
+                ></textarea>
+                <button class="send-button" id="sendButton" onclick="sendMessage()" disabled>
+                    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                    </svg>
+                </button>
+            </div>
         </div>
     </div>
 
@@ -660,11 +700,49 @@
             uploadPapers(files);
         });
 
+        const messageInput = document.getElementById('messageInput');
+        const sendButton = document.getElementById('sendButton');
+
+        function updateInputState() {
+            const hasContent = messageInput.value.trim().length > 0;
+            const isBusy = isLoading || isIndexing;
+            
+            if (hasContent && !isBusy) {
+                sendButton.disabled = false;
+                sendButton.classList.add('active');
+            } else {
+                sendButton.disabled = true;
+                sendButton.classList.remove('active');
+            }
+
+            if (isIndexing) {
+                messageInput.disabled = true;
+                messageInput.placeholder = "Indexing papers... please wait";
+            } else if (isLoading) {
+                // Keep input enabled but placeholder indicates busy
+                messageInput.disabled = false;
+                messageInput.placeholder = "Waiting for response...";
+            } else {
+                messageInput.disabled = false;
+                messageInput.placeholder = "Message Journal Assistant...";
+            }
+        }
+
+        function adjustHeight() {
+            messageInput.style.height = 'auto';
+            messageInput.style.height = Math.min(messageInput.scrollHeight, 200) + 'px';
+            updateInputState();
+        }
+
+        messageInput.addEventListener('input', adjustHeight);
+
         // Handle Enter key (Shift+Enter for new line)
-        document.getElementById('messageInput').addEventListener('keydown', (e) => {
+        messageInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                sendMessage();
+                if (!sendButton.disabled) {
+                    sendMessage();
+                }
             }
         });
 
@@ -733,6 +811,9 @@
             const originalText = uploadBtn.textContent;
             uploadBtn.disabled = true;
             uploadBtn.textContent = '⏳ Uploading...';
+            
+            isIndexing = true;
+            updateInputState();
 
             try {
                 const response = await fetch(`${API_URL}/papers/upload`, {
@@ -766,6 +847,8 @@
                 }, 2000);
             } finally {
                 uploadBtn.disabled = false;
+                isIndexing = false;
+                updateInputState();
             }
         }
 
@@ -921,7 +1004,7 @@
         }
 
         async function sendMessage() {
-            if (isLoading) return;
+            if (isLoading || isIndexing) return;
             
             const input = document.getElementById('messageInput');
             const message = input.value.trim();
@@ -929,11 +1012,12 @@
             if (!message) return;
             
             isLoading = true;
-            document.getElementById('sendButton').disabled = true;
+            updateInputState();
             
             // Add user message to chat
             addMessage(message, 'user');
             input.value = '';
+            adjustHeight(); // Reset height
             
             // Show loading indicator and create placeholder for streaming response
             const chatContainer = document.getElementById('chatContainer');
@@ -1056,6 +1140,9 @@
                             
                             es.close();
                             isStreaming = false;
+                            isLoading = false;
+                            adjustHeight();
+                            input.focus();
                             // Remove streaming IDs
                             messageDiv.removeAttribute('id');
                             contentDiv.removeAttribute('id');
@@ -1072,6 +1159,9 @@
                             messageDiv.appendChild(errDiv);
                             es.close();
                             isStreaming = false;
+                            isLoading = false;
+                            adjustHeight();
+                            input.focus();
                             return;
                         }
                     } catch (e) {
@@ -1083,6 +1173,9 @@
                     // Stream ended or failed; UI already shows any error
                     es.close();
                     isStreaming = false;
+                    isLoading = false;
+                    adjustHeight();
+                    input.focus();
                 };
 
             } catch (error) {
@@ -1098,9 +1191,8 @@
                 const streamingMsg = document.getElementById('streaming-message');
                 if (streamingMsg) streamingMsg.remove();
                 isStreaming = false;
-            } finally {
                 isLoading = false;
-                document.getElementById('sendButton').disabled = false;
+                adjustHeight();
                 input.focus();
             }
         }
