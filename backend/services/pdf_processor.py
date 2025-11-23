@@ -85,7 +85,19 @@ class PDFProcessor:
 
             try:
                 response = self._title_model.generate_content(prompt)
-                raw = (getattr(response, "text", "") or "").strip()
+                try:
+                    raw = (response.text or "").strip()
+                except Exception:
+                    # Fallback if .text accessor fails (e.g. blocked response)
+                    candidates = getattr(response, "candidates", []) or []
+                    parts = []
+                    for cand in candidates:
+                        content = getattr(cand, "content", None)
+                        if content and getattr(content, "parts", None):
+                            for part in content.parts:
+                                if getattr(part, "text", None):
+                                    parts.append(part.text)
+                    raw = " ".join(parts).strip()
             except Exception:
                 continue
 
@@ -106,7 +118,7 @@ class PDFProcessor:
         # If all attempts failed
         return ""
 
-    def _build_canonical_title(self, filename: str, inferred_title: str) -> str:
+    def build_canonical_title(self, filename: str, inferred_title: str) -> str:
         """Decide how to combine filename and inferred title.
 
         If the filename already mostly matches the inferred title (ignoring
@@ -205,7 +217,7 @@ class PDFProcessor:
             inferred_title = self._infer_title_with_ai(first_page_text)
 
         # Build canonical title using heuristic to avoid redundant duplication
-        canonical_title = self._build_canonical_title(logical_filename, inferred_title)
+        canonical_title = self.build_canonical_title(logical_filename, inferred_title)
 
         return PaperMetadata(
             id=paper_id,

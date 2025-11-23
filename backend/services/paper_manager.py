@@ -104,10 +104,13 @@ class PaperManager:
                         
                         # Update title if we have a good one from OpenAlex
                         if details.get("title"):
-                             metadata.canonical_title = details.get("title")
-                             # Also update inferred_title if it was empty or looked like a filename
-                             if not metadata.inferred_title or metadata.inferred_title == metadata.filename:
-                                 metadata.inferred_title = details.get("title")
+                             # Update inferred title with the high-quality OpenAlex title
+                             metadata.inferred_title = details.get("title")
+                             # Rebuild canonical title to ensure "filename (title)" format
+                             metadata.canonical_title = self.pdf_processor.build_canonical_title(
+                                 metadata.filename, 
+                                 metadata.inferred_title
+                             )
                         
                         # Update chunks metadata with new info
                         for chunk in chunks:

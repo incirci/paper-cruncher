@@ -362,7 +362,7 @@ class MindmapService:
 
         prompt = self.build_prompt(summaries, custom_query=custom_query, rag_context=rag_context)
         response = self.model.generate_content(prompt)
-        tree = self._safe_parse_json(response.text or "")
+        tree = self._safe_parse_json(self._extract_text(response))
 
         # Post-process the tree to normalize and de-duplicate internal concepts
         tree = self._normalize_and_deduplicate(tree)
@@ -437,7 +437,7 @@ class MindmapService:
 
         prompt = self.build_single_paper_prompt(paper_summary, custom_query=custom_query, rag_context=rag_context)
         response = self.model.generate_content(prompt)
-        tree = self._safe_parse_json(response.text or "")
+        tree = self._safe_parse_json(self._extract_text(response))
 
         # Normalize/deduplicate concept nodes for consistency
         tree = self._normalize_and_deduplicate(tree)
@@ -525,3 +525,22 @@ class MindmapService:
             return {"name": node.get("name", ""), "children": new_children}
 
         return process_node(tree)
+
+    def _extract_text(self, response) -> str:
+        """Safely extract text from response."""
+        try:
+            return response.text or ""
+        except Exception:
+            # Fallback for blocked/empty responses
+            try:
+                candidates = getattr(response, "candidates", []) or []
+                texts = []
+                for cand in candidates:
+                    content = getattr(cand, "content", None)
+                    parts = getattr(content, "parts", []) if content else []
+                    for part in parts:
+                        if getattr(part, "text", None):
+                            texts.append(part.text)
+                return "\n".join(texts)
+            except Exception:
+                return ""

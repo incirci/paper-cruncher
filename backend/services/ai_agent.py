@@ -808,10 +808,11 @@ Formatting Guidelines:
         # Streaming via GenerativeModel async
         response = await self.model.generate_content_async(prompt, stream=True)
         async for chunk in response:
-            # Prefer the SDK's quick accessor when available
-            chunk_text = getattr(chunk, "text", None)
-            if not chunk_text:
-                # Fallback: try to pull text parts manually
+            chunk_text = ""
+            try:
+                chunk_text = chunk.text
+            except Exception:
+                # Fallback: try to pull text parts manually if .text accessor fails
                 chunk_text = self._extract_text_from_response(chunk)
 
             if chunk_text:
