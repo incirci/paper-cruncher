@@ -166,6 +166,29 @@ async def serve_mindmap_page():
           gap: 12px; 
           align-items: center;
           box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+          flex-wrap: wrap;
+        }
+        .filter-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-right: 1px solid #e0e0e0;
+            padding-right: 12px;
+        }
+        .filter-group:last-child {
+            border-right: none;
+        }
+        .filter-group label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #555;
+        }
+        .year-input {
+            width: 50px;
+            padding: 4px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 12px;
         }
         .btn { 
           padding: 8px 16px; 
@@ -180,13 +203,22 @@ async def serve_mindmap_page():
           background: #f5f5f5;
           border-color: #999;
         }
+        .btn-primary {
+            background: #007bff;
+            color: white;
+            border-color: #0056b3;
+        }
+        .btn-primary:hover {
+            background: #0056b3;
+        }
         #status {
           color: #666;
           font-size: 14px;
+          margin-left: auto;
         }
         #tree-container { 
           width: 100%; 
-          height: calc(100vh - 65px);
+          height: calc(100vh - 80px);
           overflow: auto;
         }
         .node circle {
@@ -222,6 +254,25 @@ async def serve_mindmap_page():
     <body>
       <div id="toolbar">
         <button class="btn" id="refreshBtn">🔄 Refresh</button>
+        
+        <div id="citationFilters" style="display: none; gap: 12px; align-items: center;">
+            <div class="filter-group">
+                <label>Refs Year:</label>
+                <input type="number" id="refStart" class="year-input" placeholder="Min">
+                <span>-</span>
+                <input type="number" id="refEnd" class="year-input" placeholder="Max">
+            </div>
+
+            <div class="filter-group">
+                <label>Cites Year:</label>
+                <input type="number" id="citeStart" class="year-input" placeholder="Min">
+                <span>-</span>
+                <input type="number" id="citeEnd" class="year-input" placeholder="Max">
+            </div>
+
+            <button class="btn btn-primary" id="applyFiltersBtn">Filter</button>
+        </div>
+
         <button class="btn" id="expandAllBtn">⊕ Expand All</button>
         <button class="btn" id="collapseAllBtn">⊖ Collapse All</button>
         <span id="status">Loading...</span>
@@ -231,8 +282,9 @@ async def serve_mindmap_page():
       <script src="https://d3js.org/d3.v7.min.js"></script>
       <script>
         let root, svg, tree, g;
+        let originalData = null;
         const width = window.innerWidth;
-        const height = window.innerHeight - 65;
+        const height = window.innerHeight - 80;
         const margin = {top: 20, right: 120, bottom: 20, left: 200};
         
         async function loadTree() {
@@ -251,6 +303,7 @@ async def serve_mindmap_page():
                 // Citation graph mode
                 apiUrl = `/api/papers/${paperId}/citations`;
                 document.title = "Citation Map";
+                document.getElementById('citationFilters').style.display = 'flex';
             } else {
                 // Standard mindmap mode
                 const apiParams = new URLSearchParams();
@@ -258,16 +311,137 @@ async def serve_mindmap_page():
                 if (paperId) apiParams.set('paper_id', paperId);
                 if (query) apiParams.set('query', query);
                 apiUrl = apiParams.toString() ? `/api/mindmap?${apiParams.toString()}` : '/api/mindmap';
+                document.getElementById('citationFilters').style.display = 'none';
             }
             
             const res = await fetch(apiUrl);
-            const data = await res.json();
-            renderTree(data);
+            originalData = await res.json();
+            console.log("Loaded data:", originalData);
+            
+            // Calculate year ranges from data
+            let refMin = 9999, refMax = 0;
+            let citeMin = 9999, citeMax = 0;
+
+            function findYears(node, context) {
+                let currentContext = context;
+                if (node.name && node.name.startsWith("References")) currentContext = 'ref';
+                if (node.name && node.name.startsWith("Cited By")) currentContext = 'cite';
+
+                if (node.children && node.children.length > 0) {
+                    for (const child of node.children) findYears(child, currentContext);
+                } else if (node.year) {
+                    const y = parseInt(node.year);
+                    if (!isNaN(y)) {
+                        if (currentContext === 'ref') {
+                            if (y < refMin) refMin = y;
+                            if (y > refMax) refMax = y;
+                        } else if (currentContext === 'cite') {
+                            if (y < citeMin) citeMin = y;
+                            if (y > citeMax) citeMax = y;
+                        }
+                    }
+                }
+            }
+            
+            findYears(originalData, 'root');
+
+            const currentYear = new Date().getFullYear();
+            if (refMin === 9999) refMin = 1900;
+            if (refMax === 0) refMax = currentYear;
+            if (citeMin === 9999) citeMin = 1900;
+            if (citeMax === 0) citeMax = currentYear;
+
+            document.getElementById('refStart').value = refMin;
+            document.getElementById('refEnd').value = refMax;
+            document.getElementById('citeStart').value = citeMin;
+            document.getElementById('citeEnd').value = citeMax;
+
+            applyFilters();
             document.getElementById('status').textContent = 'Ready';
           } catch (e) {
             console.error(e);
             document.getElementById('status').textContent = 'Failed to load';
           }
+        }
+
+        function applyFilters() {
+            if (!originalData) return;
+
+            const refStartInput = document.getElementById('refStart').value;
+            const refEndInput = document.getElementById('refEnd').value;
+            const citeStartInput = document.getElementById('citeStart').value;
+            const citeEndInput = document.getElementById('citeEnd').value;
+
+            const refStart = refStartInput ? parseInt(refStartInput) : 0;
+            const refEnd = refEndInput ? parseInt(refEndInput) : 9999;
+            const citeStart = citeStartInput ? parseInt(citeStartInput) : 0;
+            const citeEnd = citeEndInput ? parseInt(citeEndInput) : 9999;
+
+            console.log(`Filtering: Refs ${refStart}-${refEnd}, Cites ${citeStart}-${citeEnd}`);
+
+            // Deep copy to avoid mutating originalData
+            const data = JSON.parse(JSON.stringify(originalData));
+
+            function countLeaves(node) {
+                if (!node.children || node.children.length === 0) return 1;
+                return node.children.reduce((sum, child) => sum + countLeaves(child), 0);
+            }
+
+            function filterNode(node, context) {
+                // context: 'root', 'ref', 'cite'
+                let currentContext = context;
+                
+                if (node.name && node.name.startsWith("References")) currentContext = 'ref';
+                if (node.name && node.name.startsWith("Cited By")) currentContext = 'cite';
+
+                if (node.children && node.children.length > 0) {
+                    // Group node (Section, Topic, Concept)
+                    const filteredChildren = [];
+                    for (const child of node.children) {
+                        if (filterNode(child, currentContext)) {
+                            filteredChildren.push(child);
+                        }
+                    }
+                    node.children = filteredChildren;
+                    
+                    // Update label count if present
+                    if (node.name && node.name.match(/\(\d+\)$/)) {
+                        const count = countLeaves(node);
+                        node.name = node.name.replace(/\(\d+\)$/, `(${count})`);
+                    }
+                    
+                    // Keep this node if it still has children
+                    return node.children.length > 0;
+                } else {
+                    // Leaf node (Paper)
+                    if (currentContext === 'root') return true; 
+
+                    // If no year, keep it (or could filter out if strict)
+                    if (!node.year) return true;
+                    
+                    const y = parseInt(node.year);
+                    if (currentContext === 'ref') {
+                        return y >= refStart && y <= refEnd;
+                    }
+                    if (currentContext === 'cite') {
+                        return y >= citeStart && y <= citeEnd;
+                    }
+                    return true;
+                }
+            }
+
+            // Filter the root's children
+            if (data.children) {
+                const validSections = [];
+                for (const section of data.children) {
+                    if (filterNode(section, 'root')) {
+                        validSections.push(section);
+                    }
+                }
+                data.children = validSections;
+            }
+
+            renderTree(data);
         }
         
         function renderTree(data) {
@@ -341,17 +515,20 @@ async def serve_mindmap_page():
                 return d.children || d._children ? 'has-children' : '';
             });
           
-          // Add text with truncation
-          const maxChars = 30; // Maximum characters before truncation
+          // Add text with conditional truncation
+          const maxChars = 30;
           nodeEnter.append('text')
             .attr('dy', '-0.6em')
             .attr('x', d => (d.children || d._children) ? -10 : 10)
             .attr('text-anchor', d => (d.children || d._children) ? 'end' : 'start')
             .text(d => {
               const name = d.data.name;
-              return name.length > maxChars ? name.substring(0, maxChars) + '...' : name;
+              const isIntermediate = d.children || d._children;
+              return (isIntermediate && name.length > maxChars) 
+                ? name.substring(0, maxChars) + '...' 
+                : name;
             })
-            .append('title') // Add tooltip with full name
+            .append('title')
             .text(d => d.data.name);
           
           // Update
@@ -462,6 +639,7 @@ async def serve_mindmap_page():
         document.getElementById('refreshBtn').addEventListener('click', loadTree);
         document.getElementById('expandAllBtn').addEventListener('click', expandAll);
         document.getElementById('collapseAllBtn').addEventListener('click', collapseAll);
+        document.getElementById('applyFiltersBtn').addEventListener('click', applyFilters);
         
         loadTree();
       </script>

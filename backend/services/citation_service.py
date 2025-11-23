@@ -331,28 +331,9 @@ class CitationService:
         grouped_ref_nodes = []
         for t in sorted_ref_topics:
             nodes_in_topic = refs_by_topic[t]
-            
-            # Sub-group by Concept
-            by_concept = {}
-            for n in nodes_in_topic:
-                c = n.get("concept", "General")
-                if c not in by_concept:
-                    by_concept[c] = []
-                by_concept[c].append(n)
-            
-            # Sort concepts by count
-            sorted_concepts = sorted(by_concept.keys(), key=lambda k: len(by_concept[k]), reverse=True)
-            
-            concept_groups = []
-            for c in sorted_concepts:
-                concept_groups.append({
-                    "name": f"{c} ({len(by_concept[c])})",
-                    "children": by_concept[c]
-                })
-
             grouped_ref_nodes.append({
                 "name": f"{t} ({len(nodes_in_topic)})",
-                "children": concept_groups
+                "children": nodes_in_topic
             })
         
         if unknown_topic_refs:
@@ -384,28 +365,9 @@ class CitationService:
         grouped_citation_nodes = []
         for t in sorted_cite_topics:
             nodes_in_topic = citations_by_topic[t]
-            
-            # Sub-group by Concept
-            by_concept = {}
-            for n in nodes_in_topic:
-                c = n.get("concept", "General")
-                if c not in by_concept:
-                    by_concept[c] = []
-                by_concept[c].append(n)
-            
-            # Sort concepts by count
-            sorted_concepts = sorted(by_concept.keys(), key=lambda k: len(by_concept[k]), reverse=True)
-            
-            concept_groups = []
-            for c in sorted_concepts:
-                concept_groups.append({
-                    "name": f"{c} ({len(by_concept[c])})",
-                    "children": by_concept[c]
-                })
-
             grouped_citation_nodes.append({
                 "name": f"{t} ({len(nodes_in_topic)})",
-                "children": concept_groups
+                "children": nodes_in_topic
             })
         
         if unknown_topic_citations:
