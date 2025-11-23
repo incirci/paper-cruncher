@@ -441,6 +441,14 @@ async def serve_mindmap_page():
                         node.name = node.name.replace(/\(\d+\)$/, `(${count})`);
                     }
                     
+                    // Update citation_count for the group node based on remaining children
+                    if (node.citation_count !== undefined) {
+                         node.citation_count = node.children.reduce((sum, child) => sum + (child.citation_count || 0), 0);
+                    }
+
+                    // Sort children by citation_count descending
+                    node.children.sort((a, b) => (b.citation_count || 0) - (a.citation_count || 0));
+                    
                     // Keep this node if it still has children
                     return node.children.length > 0;
                 } else {
@@ -471,6 +479,23 @@ async def serve_mindmap_page():
                 }
                 data.children = validSections;
             }
+
+            // Recalculate citation range for the filtered data
+            globalMinCitations = 999999;
+            globalMaxCitations = 0;
+            
+            function findMinMax(node) {
+                if (node.citation_count !== undefined) {
+                    if (node.citation_count < globalMinCitations) globalMinCitations = node.citation_count;
+                    if (node.citation_count > globalMaxCitations) globalMaxCitations = node.citation_count;
+                }
+                if (node.children) {
+                    node.children.forEach(findMinMax);
+                }
+            }
+            findMinMax(data);
+            if (globalMinCitations === 999999) globalMinCitations = 0;
+            console.log("Recalculated citations range:", globalMinCitations, globalMaxCitations);
 
             renderTree(data);
         }
