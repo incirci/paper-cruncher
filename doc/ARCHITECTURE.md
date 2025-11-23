@@ -40,7 +40,7 @@ cruncher/
    - Vector database service (ChromaDB wrapper, semantic search, paper micro-summaries)
    - AI agent service (orchestrator-worker RAG)
    - Mindmap service (LLM-based graph generation + post-processing)
-   - Citation service (OpenAlex integration, hierarchical graph building, influence sorting, caching)
+   - Citation service (OpenAlex integration, hierarchical graph building, influence sorting, caching, URL resolution)
    - Conversation management (CRUD, duplication, history)
    - Token tracking service
 
@@ -64,11 +64,11 @@ User Request → FastAPI → Service Layer → AI Agent / Vector DB
                          ↓
                       Response
 
-User Request (Citation Map) → FastAPI → CitationService → OpenAlex API
+User Request (Citation Map) → FastAPI → CitationService → Local Cache / OpenAlex API
                                   ↓
-                              Response (Hierarchical JSON with Citation Counts)
+                              Response (Hierarchical JSON with Citation Counts & URLs)
                                   ↓
-                              D3.js (Logarithmic Sizing & Influence Sorting)
+                              D3.js (Logarithmic Sizing, Influence Sorting, Click Handlers)
 ```
 
 ### Orchestrator-Worker RAG & Mindmap Pipeline

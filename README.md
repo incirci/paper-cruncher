@@ -188,13 +188,17 @@ The app will be available at `http://localhost:8000`.
    - **Grouping**: Papers are automatically grouped by **Research Topic** (e.g., "Artificial Intelligence", "Public Health").
 4. **Influence Highlighting**:
    - **Node Sizing**: Papers and Topics are sized logarithmically based on their citation count. Larger nodes = more influential papers.
+   - **Configurable**: Min/max node sizes can be adjusted in `config.toml`.
    - **Sorting**: Topics are sorted by total citation impact, and papers within topics are sorted by their individual citation count.
-5. **Filtering**:
+5. **Interactivity**:
+   - **Clickable Nodes**: Clicking a paper node opens its source URL (DOI or OpenAlex page) in a new tab.
+   - **Tooltips**: Hover over nodes to see full titles and exact citation counts.
+6. **Filtering**:
    - **Year Filter**: Filter references and citations by publication year range.
    - **Auto-Detection**: The filter inputs automatically default to the min/max years found in the data.
-6. **Integration**:
+7. **Integration**:
    - **Local Resolution**: If a cited paper exists in your local library, it is highlighted in green.
-   - **Full Titles**: Displays full paper titles with tooltips.
+   - **Caching**: Citation data is cached locally to ensure fast loading on subsequent visits.
 
 ### Features
 
