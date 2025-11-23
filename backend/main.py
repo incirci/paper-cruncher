@@ -509,7 +509,12 @@ async def serve_mindmap_page():
             .on('click', click);
           
           nodeEnter.append('circle')
-            .attr('r', 6)
+            .attr('r', d => {
+                if (d.data.citation_count !== undefined) {
+                    return 4 + Math.log(d.data.citation_count + 1) * 1.5;
+                }
+                return 6;
+            })
             .attr('class', d => {
                 if (d.data.is_local) return 'is-local';
                 return d.children || d._children ? 'has-children' : '';
@@ -529,7 +534,13 @@ async def serve_mindmap_page():
                 : name;
             })
             .append('title')
-            .text(d => d.data.name);
+            .text(d => {
+                let txt = d.data.name;
+                if (d.data.citation_count !== undefined) {
+                    txt += `\nCitations: ${d.data.citation_count}`;
+                }
+                return txt;
+            });
           
           // Update
           const nodeUpdate = nodeEnter.merge(node);
@@ -539,7 +550,12 @@ async def serve_mindmap_page():
             .attr('transform', d => `translate(${d.y},${d.x})`);
           
           nodeUpdate.select('circle')
-            .attr('r', 6)
+            .attr('r', d => {
+                if (d.data.citation_count !== undefined) {
+                    return 4 + Math.log(d.data.citation_count + 1) * 1.5;
+                }
+                return 6;
+            })
             .attr('class', d => {
                 if (d.data.is_local) return 'is-local';
                 return d.children || d._children ? 'has-children' : '';

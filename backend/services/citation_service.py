@@ -160,8 +160,14 @@ class CitationService:
         if cache_path.exists():
             try:
                 with open(cache_path, 'r', encoding='utf-8') as f:
-                    print(f"DEBUG: Loading {short_id} from cache")
-                    return json.load(f)
+                    cached_data = json.load(f)
+                    # Check if cache is stale (missing citation_count in references)
+                    refs = cached_data.get("references", [])
+                    if refs and "citation_count" not in refs[0]:
+                        print(f"DEBUG: Cache for {short_id} is stale (missing citation_count), re-fetching")
+                    else:
+                        print(f"DEBUG: Loading {short_id} from cache")
+                        return cached_data
             except Exception as e:
                 self.logger.warning(f"Failed to load cache for {short_id}: {e}")
 
@@ -219,7 +225,8 @@ class CitationService:
                     "year": w.get("publication_year"),
                     "authors": [{"name": a["author"]["display_name"]} for a in authors],
                     "primary_topic": primary_topic,
-                    "concepts": concepts
+                    "concepts": concepts,
+                    "citation_count": w.get("cited_by_count", 0)
                 }
 
             data = {
@@ -282,7 +289,8 @@ class CitationService:
                 "name": label,
                 "year": year,  # Store year for grouping
                 "topic": topic, # Store topic for potential grouping
-                "concept": primary_concept
+                "concept": primary_concept,
+                "citation_count": paper_obj.get("citation_count", 0)
             }
             if local_id:
                 node["local_id"] = local_id
@@ -326,20 +334,32 @@ class CitationService:
             else:
                 unknown_topic_refs.append(node)
 
-        # Sort topics by count descending
-        sorted_ref_topics = sorted(refs_by_topic.keys(), key=lambda k: len(refs_by_topic[k]), reverse=True)
+        # Sort nodes within topics and sort topics by total citations
+        topic_stats = {}
+        for t, nodes in refs_by_topic.items():
+            # Sort papers within topic by citation count
+            nodes.sort(key=lambda x: x.get("citation_count", 0), reverse=True)
+            topic_stats[t] = sum(n.get("citation_count", 0) for n in nodes)
+
+        # Sort topics by total citations descending
+        sorted_ref_topics = sorted(refs_by_topic.keys(), key=lambda k: topic_stats[k], reverse=True)
+        
         grouped_ref_nodes = []
         for t in sorted_ref_topics:
             nodes_in_topic = refs_by_topic[t]
             grouped_ref_nodes.append({
                 "name": f"{t} ({len(nodes_in_topic)})",
-                "children": nodes_in_topic
+                "children": nodes_in_topic,
+                "citation_count": topic_stats[t]
             })
         
         if unknown_topic_refs:
+            unknown_topic_refs.sort(key=lambda x: x.get("citation_count", 0), reverse=True)
+            total_citations = sum(n.get("citation_count", 0) for n in unknown_topic_refs)
             grouped_ref_nodes.append({
                 "name": f"Unknown Topic ({len(unknown_topic_refs)})",
-                "children": unknown_topic_refs
+                "children": unknown_topic_refs,
+                "citation_count": total_citations
             })
         
         # Process Citations (Forward)
@@ -359,21 +379,32 @@ class CitationService:
             else:
                 unknown_topic_citations.append(node)
 
-        # Sort topics by count descending
-        sorted_cite_topics = sorted(citations_by_topic.keys(), key=lambda k: len(citations_by_topic[k]), reverse=True)
+        # Sort nodes within topics and sort topics by total citations
+        cite_topic_stats = {}
+        for t, nodes in citations_by_topic.items():
+            # Sort papers within topic by citation count
+            nodes.sort(key=lambda x: x.get("citation_count", 0), reverse=True)
+            cite_topic_stats[t] = sum(n.get("citation_count", 0) for n in nodes)
+
+        # Sort topics by total citations descending
+        sorted_cite_topics = sorted(citations_by_topic.keys(), key=lambda k: cite_topic_stats[k], reverse=True)
         
         grouped_citation_nodes = []
         for t in sorted_cite_topics:
             nodes_in_topic = citations_by_topic[t]
             grouped_citation_nodes.append({
                 "name": f"{t} ({len(nodes_in_topic)})",
-                "children": nodes_in_topic
+                "children": nodes_in_topic,
+                "citation_count": cite_topic_stats[t]
             })
         
         if unknown_topic_citations:
+            unknown_topic_citations.sort(key=lambda x: x.get("citation_count", 0), reverse=True)
+            total_citations = sum(n.get("citation_count", 0) for n in unknown_topic_citations)
             grouped_citation_nodes.append({
                 "name": f"Unknown Topic ({len(unknown_topic_citations)})",
-                "children": unknown_topic_citations
+                "children": unknown_topic_citations,
+                "citation_count": total_citations
             })
 
         return {
