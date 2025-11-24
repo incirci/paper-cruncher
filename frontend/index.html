@@ -1409,17 +1409,31 @@
                 // Matches: delimiter "..." delimiter
                 // We use a generic regex that looks for quoted strings inside common shape delimiters
                 // This is a simplification but covers most cases like ["..."] or ("...")
-                processed = processed.replace(/(\[\[|\[\(|\[|{{|\(\(|\(\|{)(\s*"((?:[^"\\]|\\.)*)"\s*)(\]\]|\)\]|\]|}}|\)\)|\)|})/g, (match) => {
+                processed = processed.replace(/(\[\[|\[\(|\[|{{|\(\(|\(|\{)(\s*"((?:[^"\\]|\\.)*)"\s*)(\]\]|\)\]|\]|}}|\)\)|\)|})/g, (match) => {
                     placeholders.push(match);
                     return `@@MERMAID_PH_${placeholders.length - 1}@@`;
                 });
 
                 // Helper function to quote content if needed
                 const quoteIfNeeded = (content, start, end) => {
+                    // If content is already fully quoted (starts and ends with "), strip quotes and re-process
+                    // This handles cases where the regex captured quotes but we want to ensure internal escaping
+                    let inner = content;
+                    if (content.startsWith('"') && content.endsWith('"') && content.length >= 2) {
+                        // It's already quoted. We should trust it, OR we can strip and re-quote to be safe.
+                        // But if we strip, we must unescape \" to " first.
+                        // However, if it was protected by placeholders, we wouldn't be here.
+                        // If we are here, it means it wasn't protected (e.g. regex mismatch).
+                        // Let's assume if it's quoted, it's fine, just return as is.
+                        return `${start}${content}${end}`;
+                    }
+
                     // If content contains dangerous chars, quote it
-                    // Dangerous: ( ) [ ] { } " : ; & #
-                    if (/[\(\)\[\]\{\}":;&]/.test(content)) {
-                        const escaped = content.replace(/"/g, '\\"');
+                    // Dangerous: ( ) [ ] { } " : ; & # < > | \n
+                    if (/[\(\)\[\]\{\}":;&<>\n|]/.test(content)) {
+                        const escaped = content
+                            .replace(/\\/g, '\\\\')
+                            .replace(/"/g, '\\"');
                         return `${start}"${escaped}"${end}`;
                     }
                     return `${start}${content}${end}`;

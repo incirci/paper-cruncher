@@ -773,7 +773,10 @@ Visualization Guidelines (Mermaid.js):
   - These characters conflict with Mermaid's own syntax.
   - ❌ BAD: A[Function f(x)]
   - ✅ GOOD: A["Function f(x)"]
-  - Wrap the label in double quotes whenever including special characters such as (), {}, [ ], :, ->, etc.
+  - ❌ BAD: B{Proposed Framework: <br/>Simulate Industrial Duties in Fitness Setting}
+  - ✅ GOOD: B{"Proposed Framework: <br/>Simulate Industrial Duties in Fitness Setting"}
+  - ALWAYS wrap the label in double quotes if it contains spaces or special characters such as (), {}, [ ], :, ->, <, >, etc.
+  - If a newline is unavoidable, use <br/> inside a quoted string.
 
 - Do NOT include any commentary, explanation, footnotes, or references inside the mermaid code block.
   - Only raw Mermaid code is allowed.
