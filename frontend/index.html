@@ -5,6 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Journal Article AI Assistant</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        mermaid.initialize({ 
+            startOnLoad: false, 
+            theme: 'default',
+            securityLevel: 'loose',
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
+        });
+        window.mermaid = mermaid;
+    </script>
     <style>
         * {
             margin: 0;
@@ -414,19 +428,31 @@
         }
 
         .message-content pre {
-            background: #2d2d2d;
-            color: #f8f8f8;
+            background: #f6f8fa;
+            color: #24292e;
             padding: 12px;
             border-radius: 6px;
             overflow-x: auto;
             margin-bottom: 12px;
             position: relative;
+            border: 1px solid #e1e4e8;
         }
 
         .message-content pre code {
             background: none;
             padding: 0;
             color: inherit;
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+            font-size: 0.9em;
+        }
+
+        .mermaid {
+            background: white;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            text-align: center;
+            border: 1px solid #e0e0e0;
         }
 
         .code-copy-button {
@@ -709,6 +735,77 @@
     </div>
 
     <script>
+        // Configure marked globally if available
+        if (typeof marked !== 'undefined') {
+            marked.use({
+                breaks: true,
+                gfm: true,
+                highlight: function(code, lang) {
+                    if (typeof hljs !== 'undefined') {
+                        const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+                        return hljs.highlight(code, { language }).value;
+                    }
+                    return code;
+                },
+                langPrefix: 'hljs language-'
+            });
+
+            const renderer = {
+                code(tokenOrCode, language, isEscaped) {
+                    // Handle Marked v12+ (object argument) vs older versions (string arguments)
+                    let codeStr = '';
+                    let lang = '';
+                    
+                    if (typeof tokenOrCode === 'object' && tokenOrCode !== null && !Array.isArray(tokenOrCode)) {
+                        codeStr = (tokenOrCode.text || '').toString();
+                        lang = (tokenOrCode.lang || '').toString();
+                    } else {
+                        codeStr = (tokenOrCode || '').toString();
+                        lang = (language || '').toString();
+                    }
+
+                    lang = lang.trim().toLowerCase();
+                    
+                    // Robust Mermaid detection
+                    const isExplicitMermaid = lang === 'mermaid';
+                    
+                    // Check for mermaid keywords at the start of the code
+                    const firstLine = codeStr.trim().split('\n')[0].trim();
+                    const mermaidKeywords = [
+                        'graph', 'flowchart', 'sequenceDiagram', 'classDiagram', 'stateDiagram', 
+                        'stateDiagram-v2', 'gantt', 'pie', 'erDiagram', 'journey', 'gitGraph', 
+                        'mindmap', 'timeline', 'c4context', 'zenuml', 'sankey-beta', 'xychart-beta', 
+                        'block-beta', 'packet-beta', 'kanban', 'architecture-beta', 'requirementDiagram'
+                    ];
+                    
+                    const isMermaidKeyword = mermaidKeywords.some(k => {
+                        const regex = new RegExp(`^${k}(\\s|$)`, 'i');
+                        return regex.test(firstLine);
+                    });
+                    
+                    const isMermaidDirective = firstLine.startsWith('%%');
+
+                    if (isExplicitMermaid || isMermaidKeyword || isMermaidDirective) {
+                        return `<div class="mermaid">${codeStr}</div>`;
+                    }
+                    
+                    // Default code rendering with Highlight.js
+                    const validLang = (lang && typeof hljs !== 'undefined' && hljs.getLanguage(lang)) ? lang : '';
+                    const langClass = validLang ? 'hljs language-' + validLang : 'hljs';
+                    
+                    let highlighted = codeStr;
+                    if (validLang) {
+                        try {
+                            highlighted = hljs.highlight(codeStr, { language: validLang }).value;
+                        } catch (e) {}
+                    }
+                    
+                    return `<pre><code class="${langClass}">${highlighted}</code></pre>`;
+                }
+            };
+            marked.use({ renderer });
+        }
+
         const API_URL = 'http://localhost:8000/api';
         let sessionId = null;
         let isLoading = false;
@@ -1051,6 +1148,100 @@
             }
         }
 
+        function renderMarkdownWithMath(text) {
+            if (typeof marked === 'undefined') return text;
+            
+            // If KaTeX is not loaded, fallback to just markdown
+            if (typeof katex === 'undefined') return marked.parse(text);
+
+            const mathBlocks = [];
+            
+            // Protect block math $$...$$
+            let protectedText = text.replace(/\$\$([\s\S]*?)\$\$/g, (match, tex) => {
+                mathBlocks.push({ type: 'display', tex: tex });
+                return `MATHBLOCK${mathBlocks.length - 1}END`;
+            });
+
+            // Protect block math \[...\]
+            protectedText = protectedText.replace(/\\\[([\s\S]*?)\\\]/g, (match, tex) => {
+                mathBlocks.push({ type: 'display', tex: tex });
+                return `MATHBLOCK${mathBlocks.length - 1}END`;
+            });
+
+            // Protect inline math $...$
+            protectedText = protectedText.replace(/\$([^$\n]+?)\$/g, (match, tex) => {
+                mathBlocks.push({ type: 'inline', tex: tex });
+                return `MATHINLINE${mathBlocks.length - 1}END`;
+            });
+
+            // Protect inline math \(...\)
+            protectedText = protectedText.replace(/\\\(([\s\S]*?)\\\)/g, (match, tex) => {
+                mathBlocks.push({ type: 'inline', tex: tex });
+                return `MATHINLINE${mathBlocks.length - 1}END`;
+            });
+
+            // Parse Markdown
+            let html = marked.parse(protectedText);
+
+            // Fix: Restore raw TeX inside Mermaid blocks BEFORE rendering KaTeX
+            // This prevents KaTeX HTML from breaking Mermaid diagrams
+            html = html.replace(/<div class="mermaid">([\s\S]*?)<\/div>/g, (match, content) => {
+                // 1. Restore math (sanitized)
+                let processed = content.replace(/MATH(BLOCK|INLINE)(\d+)END/g, (m, type, idx) => {
+                    const block = mathBlocks[parseInt(idx)];
+                    if (block) {
+                        // Sanitize: remove newlines and problematic chars that break Mermaid syntax
+                        let clean = block.tex.replace(/\n/g, ' ').trim();
+                        clean = clean.replace(/[\(\)\[\]\{\}"']/g, ''); 
+                        return clean;
+                    }
+                    return m;
+                });
+
+                // 2. Decode HTML entities that Marked might have escaped
+                processed = processed
+                    .replace(/&gt;/g, '>')
+                    .replace(/&lt;/g, '<')
+                    .replace(/&amp;/g, '&')
+                    .replace(/&quot;/g, '"');
+
+                // 3. Remove chatty lines (References, Notes) that break syntax
+                processed = processed.replace(/^\s*[\(]?(Reference|Note|Source):.*$/gim, '');
+
+                // 4. Auto-fix unquoted node labels containing parentheses
+                // Matches [text (with) parens] that isn't already quoted
+                processed = processed.replace(/\[([^"\]]*?[\(\)][^"\]]*?)\]/g, '["$1"]');
+
+                // 5. Auto-fix unquoted node labels containing nested brackets
+                // Matches [text [with] brackets] that isn't already quoted
+                // This handles common cases like arrays [1, 2] or citations [1] inside nodes
+                processed = processed.replace(/\[([^"\]]*?\[[^"\]]*?\])\]/g, '["$1"]');
+
+                return `<div class="mermaid">${processed}</div>`;
+            });
+
+            // Restore and render math for the rest of the document
+            html = html.replace(/MATHBLOCK(\d+)END/g, (match, index) => {
+                const block = mathBlocks[parseInt(index)];
+                try {
+                    return katex.renderToString(block.tex, { displayMode: true, throwOnError: false });
+                } catch (e) {
+                    return match;
+                }
+            });
+
+            html = html.replace(/MATHINLINE(\d+)END/g, (match, index) => {
+                const block = mathBlocks[parseInt(index)];
+                try {
+                    return katex.renderToString(block.tex, { displayMode: false, throwOnError: false });
+                } catch (e) {
+                    return match;
+                }
+            });
+
+            return html;
+        }
+
         async function sendMessage() {
             if (isLoading || isIndexing) return;
             
@@ -1161,7 +1352,7 @@
                         if (data.type === 'chunk') {
                             fullText += data.text;
                             if (typeof marked !== 'undefined') {
-                                contentDiv.innerHTML = marked.parse(fullText);
+                                contentDiv.innerHTML = renderMarkdownWithMath(fullText);
                                 attachCodeBlockCopyButtons(contentDiv);
                             } else {
                                 contentDiv.textContent = fullText;
@@ -1181,6 +1372,17 @@
                             }
                             if (data.token_usage) {
                                 await updateTokenStats();
+                            }
+
+                            // Render mermaid diagrams in the final message
+                            if (window.mermaid) {
+                                try {
+                                    await window.mermaid.run({
+                                        nodes: contentDiv.querySelectorAll('.mermaid')
+                                    });
+                                } catch (e) {
+                                    console.error('Mermaid render error:', e);
+                                }
                             }
 
                             // Ensure latest paper context is persisted with the session
@@ -1271,13 +1473,17 @@
             
             // For assistant messages, parse markdown
             if (role === 'assistant' && typeof marked !== 'undefined') {
-                // Configure marked for better formatting
-                marked.setOptions({
-                    breaks: true,
-                    gfm: true
-                });
-                contentDiv.innerHTML = marked.parse(content);
+                contentDiv.innerHTML = renderMarkdownWithMath(content);
                 attachCodeBlockCopyButtons(contentDiv);
+                
+                // Render mermaid diagrams if any
+                if (window.mermaid) {
+                    setTimeout(() => {
+                        window.mermaid.run({
+                            nodes: contentDiv.querySelectorAll('.mermaid')
+                        }).catch(e => console.error('Mermaid error:', e));
+                    }, 100);
+                }
             } else {
                 // For user messages, use plain text
                 contentDiv.textContent = content;

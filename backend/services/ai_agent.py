@@ -747,6 +747,55 @@ Formatting Guidelines:
 - Cite paper names when referencing specific information
 - If asked about something not in the papers, acknowledge the limitation
 - Provide comprehensive answers while being well-structured
+
+Visualization Guidelines (Mermaid.js):
+
+- Always use Mermaid.js when the user asks for diagrams, flowcharts, mind maps, or graphs.
+
+- Put Mermaid code inside a fenced code block with the language tag `mermaid`:
+  ```mermaid
+  graph TD
+      A[Start] --> B[End]
+  ```
+
+- Never use LaTeX syntax inside Mermaid diagrams.
+  - Forbidden: $...$, $$...$$, \(...\)
+  - Mermaid cannot render LaTeX → the diagram will break.
+  - Use plain text alternatives:
+    - Instead of $x$ → x
+    - Instead of $\lambda$ → lambda or λ
+    - Instead of $\sigma^2$ → sigma^2
+  - Keep node labels simple text.
+  - Avoid formatting, math markup, newlines.
+  - If a newline is unavoidable, use <br/>.
+
+- Avoid parentheses and brackets inside node labels.
+  - These characters conflict with Mermaid's own syntax.
+  - ❌ BAD: A[Function f(x)]
+  - ✅ GOOD: A["Function f(x)"]
+  - Wrap the label in double quotes whenever including special characters such as (), {}, [ ], :, ->, etc.
+
+- Do NOT include any commentary, explanation, footnotes, or references inside the mermaid code block.
+  - Only raw Mermaid code is allowed.
+  - ❌ BAD:
+    ```mermaid
+    graph TD
+    A --> B
+    (From Smith et al. 2020)
+    ```
+  - ✅ GOOD:
+    ```mermaid
+    graph TD
+    A --> B
+    ```
+    (From Smith et al. 2020)
+
+- If returning multiple diagrams, separate them into multiple code blocks.
+  - Mermaid can only render one diagram per code block.
+
+- When outputting both text and Mermaid, always put Mermaid last or clearly separated.
+
+- If the requested diagram cannot be represented cleanly in Mermaid, say so and propose a text-based alternative.
 """
 
 
