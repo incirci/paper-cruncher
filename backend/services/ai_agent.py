@@ -112,7 +112,7 @@ REASONING: Need overview of all papers
 Valid actions: 
 1. fetch_summary: Use for high-level overviews, "list all papers", or general summaries. Ignores FOCUS.
 2. fetch_details: Use for specific questions where the answer might be in just a few papers. (e.g. "Find the paper that uses LSTM")
-3. fetch_comparison: Use for synthesizing specific information across multiple papers. (e.g. "Compare accuracy across all papers", "List the limitations of papers A and B", "Trace the evolution of X"). This searches for the FOCUS topic in each target paper.
+3. fetch_comparison: Use for synthesizing specific information across multiple papers. (e.g. "Compare accuracy across all papers", "List the limitations of papers A and B", "Trace the evolution of X", "Categorize papers by Y", "Create a table of Z"). This searches for the FOCUS topic in each target paper. Use DENSITY: high for detailed extraction.
 4. fetch_metadata: Use for questions about citation counts, publication years, authors, venues, or impact. (e.g. "Which paper has the most citations?", "Who are the authors of paper X?", "When was paper Y published?"). Ignores FOCUS.
 5. fetch_references: Use when asked to list references or what a paper cites. (e.g. "What papers does X cite?", "List references of Y"). Ignores FOCUS.
 6. fetch_cited_by: Use when asked to list papers that cite a paper. (e.g. "Who cited paper X?", "List papers citing Y"). Ignores FOCUS.
@@ -454,7 +454,7 @@ For DENSITY, use: normal (default, 5 chunks) or high (deep dive, 20 chunks)
             if action == 'fetch_comparison' and target_ids:
                 # Determine chunks per paper. 
                 # If density is high, take more. If normal, take fewer to avoid context explosion.
-                chunks_per_paper = 5 if density == 'high' else 3
+                chunks_per_paper = 8 if density == 'high' else 3
                 
                 for pid in target_ids:
                     results = await asyncio.to_thread(
@@ -492,7 +492,7 @@ For DENSITY, use: normal (default, 5 chunks) or high (deep dive, 20 chunks)
                 
         return unique_chunks
 
-    def _build_context(
+    async def _build_context(
         self,
         chunks: List[dict],
         include_overview: bool = True,
@@ -501,12 +501,11 @@ For DENSITY, use: normal (default, 5 chunks) or high (deep dive, 20 chunks)
         """Format chunks into a context string."""
         
         # Helper to get paper details
-        def get_paper_details(pid, default_title, default_filename):
+        def get_paper_basic_details(pid, default_title, default_filename):
             if self.citation_service:
                 paper = self.citation_service.paper_manager.get_paper(pid)
                 if paper:
                     return paper.display_title, paper.filename
-            
             return default_title or default_filename or "Unknown Paper", default_filename or "Unknown Filename"
 
         context_parts = []
@@ -514,14 +513,14 @@ For DENSITY, use: normal (default, 5 chunks) or high (deep dive, 20 chunks)
         if include_overview:
             # Add list of available papers to context so the model knows what's in the library
             # regardless of what chunks were retrieved.
-            papers = self.vector_db.get_all_papers()
+            papers = await asyncio.to_thread(self.vector_db.get_all_papers)
             if allowed_paper_ids:
                 papers = [p for p in papers if p['paper_id'] in allowed_paper_ids]
             
             if papers:
                 context_parts.append("Available Papers in Knowledge Base:")
                 for p in papers:
-                    title, filename = get_paper_details(p['paper_id'], p.get('paper_title'), p.get('paper_filename'))
+                    title, filename = get_paper_basic_details(p['paper_id'], p.get('paper_title'), p.get('paper_filename'))
                     context_parts.append(f"- Title: {title} (Filename: {filename})")
                 context_parts.append("")
         
@@ -536,11 +535,23 @@ For DENSITY, use: normal (default, 5 chunks) or high (deep dive, 20 chunks)
         for pid, paper_chunks in chunks_by_paper.items():
             # Get paper title/filename from first chunk metadata
             meta = paper_chunks[0]['metadata']
-            title, filename = get_paper_details(pid, meta.get('paper_title'), meta.get('paper_filename'))
+            title, filename = get_paper_basic_details(pid, meta.get('paper_title'), meta.get('paper_filename'))
             
             context_parts.append(f"--- Paper Analysis ---")
             context_parts.append(f"Title: {title}")
             context_parts.append(f"Filename: {filename}")
+            
+            # Try to fetch rich metadata if available
+            if self.citation_service:
+                try:
+                    paper_meta = await self.citation_service.get_paper_metadata(pid, fetch_full_details=False)
+                    if paper_meta:
+                        context_parts.append(f"Year: {paper_meta.get('year', 'N/A')}")
+                        context_parts.append(f"Authors: {', '.join(paper_meta.get('authors', []))}")
+                        context_parts.append(f"Citations: {paper_meta.get('citation_count', 'N/A')}")
+                except Exception:
+                    pass
+
             context_parts.append("Content Snippets:")
             for chunk in paper_chunks:
                 context_parts.append(chunk['content'])
@@ -628,7 +639,7 @@ Answer:'''
             allowed_paper_ids=allowed_paper_ids,
             user_query=query,
         )
-        context = self._build_context(
+        context = await self._build_context(
             relevant_chunks,
             include_overview=True,
             allowed_paper_ids=allowed_paper_ids,
@@ -755,7 +766,7 @@ Formatting Guidelines:
                 f"Worker found no chunks for orchestrated commands. "
                 f"Strategy: {orchestration.get('strategy')}, Reasoning: {orchestration.get('reasoning')}"
             )
-        context = self._build_context(
+        context = await self._build_context(
             relevant_chunks,
             include_overview=True,
             allowed_paper_ids=allowed_paper_ids,
