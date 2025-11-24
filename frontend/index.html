@@ -1247,22 +1247,68 @@
                 // Strategy: Protect valid quoted labels, then quote any unquoted labels containing special chars.
                 
                 const placeholders = [];
-                // Protect valid quoted labels: A["Label"] or A["Label \"quote\""]
-                processed = processed.replace(/\[\s*"((?:[^"\\]|\\.)*)"\s*\]/g, (match) => {
+                
+                // Helper to protect already quoted strings inside delimiters
+                // Matches: delimiter "..." delimiter
+                // We use a generic regex that looks for quoted strings inside common shape delimiters
+                // This is a simplification but covers most cases like ["..."] or ("...")
+                processed = processed.replace(/(\[\[|\[\(|\[|{{|\(\(|\(\|{)(\s*"((?:[^"\\]|\\.)*)"\s*)(\]\]|\)\]|\]|}}|\)\)|\)|})/g, (match) => {
                     placeholders.push(match);
                     return `@@MERMAID_PH_${placeholders.length - 1}@@`;
                 });
 
-                // Fix unquoted labels: A[Label]
-                // Matches balanced brackets (supports 1 level of nesting like [Citation [1]])
-                processed = processed.replace(/\[((?:[^\[\]]|\[[^\[\]]*\])*)\]/g, (match, labelContent) => {
-                    // Check if it needs quoting (contains parens, braces, quotes, or brackets)
-                    if (/[\(\)\{\}"']/.test(labelContent) || /\[|\]/.test(labelContent)) {
-                        // Escape existing quotes
-                        const escaped = labelContent.replace(/"/g, '\\"');
-                        return `["${escaped}"]`;
+                // Helper function to quote content if needed
+                const quoteIfNeeded = (content, start, end) => {
+                    // If content contains dangerous chars, quote it
+                    // Dangerous: ( ) [ ] { } " : ; & #
+                    if (/[\(\)\[\]\{\}":;&]/.test(content)) {
+                        const escaped = content.replace(/"/g, '\\"');
+                        return `${start}"${escaped}"${end}`;
                     }
-                    return match;
+                    return `${start}${content}${end}`;
+                };
+
+                // Fix unquoted subgraph titles
+                // Matches: subgraph Title Text (no quotes, no brackets)
+                // We use a multiline regex to find subgraph lines
+                processed = processed.replace(/^\s*subgraph\s+([^"\[\r\n]+)(?:\r?\n|$)/gm, (match, content) => {
+                    const trimmed = content.trim();
+                    return `subgraph "${trimmed}"\n`;
+                });
+
+                // Fix unquoted labels for various shapes
+                // We process them in order of specificity (longest delimiters first)
+
+                // 1. [[...]] Subroutine
+                processed = processed.replace(/\[\[((?:(?!\]\]).)*)\]\]/g, (match, content) => quoteIfNeeded(content, '[[', ']]'));
+
+                // 2. [([...])] Database (escaped regex for [() ])
+                processed = processed.replace(/\[\(((?:(?!\)\]).)*)\)\]/g, (match, content) => quoteIfNeeded(content, '[(', ')]'));
+
+                // 3. ((...)) Circle
+                processed = processed.replace(/\(\(((?:(?!\)\)).)*)\)\)/g, (match, content) => quoteIfNeeded(content, '((', '))'));
+
+                // 4. ([...]) Stadium
+                processed = processed.replace(/\(\[((?:(?!\]\)).)*)\]\)/g, (match, content) => quoteIfNeeded(content, '([', '])'));
+
+                // 5. {{...}} Hexagon
+                processed = processed.replace(/{{((?:(?!}}).)*)}}/g, (match, content) => quoteIfNeeded(content, '{{', '}}'));
+
+                // 6. [...] Rect (supports 1 level of nesting for brackets)
+                processed = processed.replace(/\[((?:[^\[\]]|\[[^\[\]]*\])*)\]/g, (match, content) => quoteIfNeeded(content, '[', ']'));
+
+                // 7. (...) Round (supports 1 level of nesting for parens)
+                processed = processed.replace(/\(([^()]*|\([^()]*\))*\)/g, (match) => {
+                    // Extract content from (content)
+                    // We need to be careful because the regex matches the whole group including outer parens
+                    const content = match.slice(1, -1);
+                    return quoteIfNeeded(content, '(', ')');
+                });
+
+                // 8. {...} Rhombus (supports 1 level of nesting for braces)
+                processed = processed.replace(/\{([^{}]|\{[^{}]*\})*\}/g, (match) => {
+                    const content = match.slice(1, -1);
+                    return quoteIfNeeded(content, '{', '}');
                 });
 
                 // Restore placeholders
@@ -1270,7 +1316,7 @@
                     return placeholders[parseInt(idx)] || match;
                 });
 
-                return `<div class="mermaid">${processed}</div>`;
+                return `<div class="mermaid" data-original="${encodeURIComponent(content)}">${processed}</div>`;
             });
 
             // Restore and render math for the rest of the document
@@ -1293,6 +1339,47 @@
             });
 
             return html;
+        }
+
+        async function runMermaid(container) {
+            if (!window.mermaid) return;
+            const nodes = container.querySelectorAll('.mermaid');
+            for (const node of nodes) {
+                const original = node.getAttribute('data-original');
+                const codeToRender = node.textContent;
+                
+                try {
+                    // Validate first
+                    await window.mermaid.parse(codeToRender);
+                    // If valid, run
+                    await window.mermaid.run({ nodes: [node] });
+                } catch (err) {
+                    console.warn('Mermaid validation/render failed:', err);
+                    // Fallback to raw code
+                    const rawCode = original ? decodeURIComponent(original) : codeToRender;
+                    
+                    const pre = document.createElement('pre');
+                    const code = document.createElement('code');
+                    code.className = 'hljs language-mermaid'; 
+                    code.textContent = rawCode;
+                    pre.appendChild(code);
+                    
+                    // Add a small error message above
+                    const errorMsg = document.createElement('div');
+                    errorMsg.style.color = '#b00020';
+                    errorMsg.style.fontSize = '12px';
+                    errorMsg.style.marginBottom = '4px';
+                    errorMsg.textContent = 'Diagram syntax error (showing raw):';
+                    
+                    const wrapper = document.createElement('div');
+                    wrapper.appendChild(errorMsg);
+                    wrapper.appendChild(pre);
+                    
+                    node.replaceWith(wrapper);
+                    
+                    if (window.hljs) window.hljs.highlightElement(code);
+                }
+            }
         }
 
         async function sendMessage() {
@@ -1428,15 +1515,7 @@
                             }
 
                             // Render mermaid diagrams in the final message
-                            if (window.mermaid) {
-                                try {
-                                    await window.mermaid.run({
-                                        nodes: contentDiv.querySelectorAll('.mermaid')
-                                    });
-                                } catch (e) {
-                                    console.error('Mermaid render error:', e);
-                                }
-                            }
+                            await runMermaid(contentDiv);
 
                             // Ensure latest paper context is persisted with the session
                             await saveSessionContext({ reload: false });
@@ -1538,13 +1617,9 @@
                 attachCodeBlockCopyButtons(contentDiv);
                 
                 // Render mermaid diagrams if any
-                if (window.mermaid) {
-                    setTimeout(() => {
-                        window.mermaid.run({
-                            nodes: contentDiv.querySelectorAll('.mermaid')
-                        }).catch(e => console.error('Mermaid error:', e));
-                    }, 100);
-                }
+                setTimeout(() => {
+                    runMermaid(contentDiv);
+                }, 100);
             } else {
                 // For user messages, use plain text
                 contentDiv.textContent = content;
