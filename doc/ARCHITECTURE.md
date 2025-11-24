@@ -64,6 +64,7 @@ cruncher/
    - Mindmap service (LLM-based graph generation + post-processing)
    - Citation service (OpenAlex integration, hierarchical graph building, influence sorting, caching, URL resolution)
    - Conversation management (CRUD, duplication, history)
+   - Paper manager (Metadata persistence, pruning logic)
    - Token tracking service
    - Progress manager (SSE-based real-time status updates)
 
@@ -94,6 +95,11 @@ User Request (Citation Map) → FastAPI → CitationService → Local Cache / Op
                               D3.js (Logarithmic Sizing, Influence Sorting, Click Handlers)
 
 Background Tasks (Upload/Reindex) → ProgressManager → SSE Stream (/api/progress) → Frontend UI
+
+Prune Data → PaperManager.prune_papers → Identify unused papers
+           → Delete PDFs, Vector Chunks, Metadata
+           → OpenAlexClient.clear_cache
+           → MindmapService.invalidate_global_cache
 ```
 
 ### Orchestrator-Worker RAG & Mindmap Pipeline

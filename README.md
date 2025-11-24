@@ -207,6 +207,18 @@ The app will be available at `http://localhost:8000`.
    - **Local Resolution**: If a cited paper exists in your local library, it is highlighted in green.
    - **Caching**: Citation data is cached locally to ensure fast loading on subsequent visits.
 
+### Pruning Data
+
+1. Click the "✂ Prune Data" button in the sidebar.
+2. This action removes all papers that are **not** currently part of any active session.
+3. It performs a deep clean, removing:
+   - PDF files from disk
+   - Vector embeddings from the database
+   - Metadata entries
+   - Cached citation data (OpenAlex)
+   - Global mindmap caches
+4. Use this to free up space and keep your knowledge base focused on active projects.
+
 ### Features
 
 - **Modern Chat Interface**: ChatGPT-style UI with floating input, auto-expanding text area, and state-aware blocking.
@@ -236,6 +248,9 @@ The app will be available at `http://localhost:8000`.
   - All state changes sync through backend
   - Real-time session updates via SSE events
   - No UI drift from backend state
+- **Data Pruning**: Keep your workspace clean
+  - "Prune Data" button removes papers not used in any active session
+  - Deep cleans vector DB, metadata, and caches
 
 ## Project Structure
 
@@ -301,6 +316,14 @@ cruncher/
   - Deletes data/ directory (vector DB, conversations, uploads)
   - Clears in-memory caches (including mindmap caches)
   - Resets paper manager, token tracker, conversation manager
+- `POST /api/admin/prune` - Prune unused data
+  - Removes papers not referenced by any active session
+  - Cleans up:
+    - Vector DB chunks
+    - Uploaded PDF files
+    - Metadata entries
+    - OpenAlex citation caches
+    - Global mindmap cache
 
 ### Health
 

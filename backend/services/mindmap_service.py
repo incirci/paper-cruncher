@@ -467,6 +467,19 @@ class MindmapService:
         await asyncio.to_thread(self.save_graph, tree)
         return tree
 
+    def invalidate_global_cache(self) -> None:
+        """Delete the global graph cache files to force a rebuild."""
+        try:
+            if self.graph_file.exists():
+                self.graph_file.unlink()
+            if self.index_file.exists():
+                self.index_file.unlink()
+            
+            # Clear in-memory cache
+            self._graph_cache.clear()
+        except Exception as e:
+            print(f"Error invalidating mindmap cache: {e}")
+
     # ------------------------------------------------------------------
     # Normalization and de-duplication of concept nodes
     # ------------------------------------------------------------------

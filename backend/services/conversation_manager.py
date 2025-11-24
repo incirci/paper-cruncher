@@ -212,7 +212,7 @@ class ConversationManager:
                 # Get messages
                 cursor.execute(
                     """
-                    SELECT role, content, timestamp, token_count, source_papers
+                    SELECT id, role, content, timestamp, token_count, source_papers
                     FROM messages
                     WHERE session_id = ?
                     ORDER BY timestamp ASC
@@ -224,11 +224,12 @@ class ConversationManager:
                 for row in cursor.fetchall():
                     messages.append(
                         Message(
-                            role=MessageRole(row[0]),
-                            content=row[1],
-                            timestamp=datetime.fromisoformat(row[2]),
-                            token_count=row[3],
-                            source_papers=json.loads(row[4]),
+                            id=row[0],
+                            role=MessageRole(row[1]),
+                            content=row[2],
+                            timestamp=datetime.fromisoformat(row[3]),
+                            token_count=row[4],
+                            source_papers=json.loads(row[5]),
                         )
                     )
 
@@ -399,3 +400,16 @@ class ConversationManager:
             paper_ids=source_conv.paper_ids,
             session_name=new_name
         )
+
+    def delete_message(self, message_id: int) -> bool:
+        """Delete a specific message by ID.
+        
+        Returns:
+            True if message was deleted, False if not found.
+        """
+        with self._lock:
+            with sqlite3.connect(self.db_path, timeout=30.0) as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM messages WHERE id = ?", (message_id,))
+                conn.commit()
+                return cursor.rowcount > 0

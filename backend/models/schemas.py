@@ -86,6 +86,7 @@ class PaperChunk(BaseModel):
 class Message(BaseModel):
     """Chat message."""
 
+    id: Optional[int] = None
     role: MessageRole
     content: str
     timestamp: datetime = Field(default_factory=datetime.now)

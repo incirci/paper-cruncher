@@ -184,6 +184,9 @@ class PaperManager:
         Args:
             paper_id: Paper ID to remove
         """
+        # Get metadata to check for OpenAlex ID
+        meta = self.papers.get(paper_id)
+
         # Remove from vector database
         self.vector_db.delete_paper(paper_id)
 
@@ -191,6 +194,10 @@ class PaperManager:
         if paper_id in self.papers:
             del self.papers[paper_id]
             
+        # Clean up OpenAlex cache if applicable
+        if meta and meta.openalex_id and self.openalex_client:
+            self.openalex_client.clear_cache(meta.openalex_id)
+
         # Save updated metadata
         self._save_metadata()
 
@@ -257,3 +264,38 @@ class PaperManager:
         self.papers.clear()
         if self.metadata_file.exists():
             self.metadata_file.unlink()
+
+    def prune_papers(self, keep_ids: List[str]) -> int:
+        """
+        Remove all papers that are not in the keep_ids list.
+        
+        Args:
+            keep_ids: List of paper IDs to keep.
+            
+        Returns:
+            Number of papers removed.
+        """
+        keep_set = set(keep_ids)
+        all_ids = list(self.papers.keys())
+        removed_count = 0
+        
+        for paper_id in all_ids:
+            if paper_id not in keep_set:
+                # Get metadata before removing to find the file
+                meta = self.papers.get(paper_id)
+                
+                # Remove from DB and memory
+                self.remove_paper(paper_id)
+                
+                # Remove physical file if it exists
+                if meta and meta.filepath:
+                    try:
+                        path = Path(meta.filepath)
+                        if path.exists() and path.is_file():
+                            path.unlink()
+                    except Exception as e:
+                        print(f"Error deleting file for paper {paper_id}: {e}")
+                
+                removed_count += 1
+                
+        return removed_count

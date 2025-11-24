@@ -31,12 +31,12 @@ class AgentConfig(BaseModel):
 
     model: str = "gemini-2.0-flash-exp"
     max_context_tokens: int = 1000000
-    max_response_tokens: int = 8192
+    max_response_tokens: int = 30000
     temperature: float = 0.7
     # Optional separate model/config for orchestrator step
     orchestrator_model: Optional[str] = None
     orchestrator_temperature: float = 0.2
-    orchestrator_max_output_tokens: int = 300
+    orchestrator_max_output_tokens: int = 4096
 
 
 class MemoryConfig(BaseModel):

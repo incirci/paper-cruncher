@@ -82,6 +82,11 @@ app.include_router(agent.router, prefix="/api", tags=["agent"])
 app.include_router(config_api.router, prefix="/api", tags=["config"])
 app.include_router(mindmap_api.router, prefix="/api", tags=["mindmap"])
 
+# Mount uploads directory to serve PDFs
+uploads_dir = settings.get_vector_db_path().parent / "uploads"
+uploads_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/api/files", StaticFiles(directory=str(uploads_dir)), name="files")
+
 
 @app.get("/api")
 async def root():
@@ -163,6 +168,49 @@ async def reset_all_data():
                 print(f"Error wiping {folder}: {e}")
 
     return {"message": f"All data reset: cleared DBs and removed static files in {data_root}"}
+
+
+@app.post("/api/admin/prune")
+async def prune_data():
+    """
+    Prune data: Delete papers that are not referenced by any active session.
+    """
+    import json
+    app_state: AppState = app.state.app_state
+    
+    # 1. Get all active sessions
+    sessions = app_state.conversation_manager.list_sessions()
+    
+    # 2. Collect all referenced paper IDs
+    referenced_ids = set()
+    for session in sessions:
+        p_ids_str = session.get("paper_ids")
+        if p_ids_str:
+            try:
+                # It might be a list if the manager was updated, or a string if raw from DB
+                if isinstance(p_ids_str, str):
+                    p_ids = json.loads(p_ids_str)
+                elif isinstance(p_ids_str, list):
+                    p_ids = p_ids_str
+                else:
+                    p_ids = []
+                
+                if p_ids:
+                    referenced_ids.update(p_ids)
+            except Exception as e:
+                print(f"Error parsing paper_ids for session {session.get('session_id')}: {e}")
+    
+    # 3. Prune papers
+    removed_count = app_state.paper_manager.prune_papers(list(referenced_ids))
+    
+    # 4. Invalidate mindmap cache if papers were removed
+    if removed_count > 0:
+        app_state.mindmap_service.invalidate_global_cache()
+    
+    return {
+        "message": f"Pruned {removed_count} papers that were not referenced by any session.",
+        "removed_count": removed_count
+    }
 
 
 # Serve frontend

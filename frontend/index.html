@@ -367,9 +367,34 @@
             padding: 2px 6px;
             opacity: 0;
             transition: opacity 0.15s ease, background-color 0.15s ease;
+            color: #333;
         }
 
-        .message.assistant:hover .copy-button {
+        .message-delete-btn {
+            position: absolute;
+            top: 6px;
+            right: 34px;
+            background: #ffffffcc;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            padding: 2px 6px;
+            opacity: 0;
+            transition: opacity 0.15s ease, background-color 0.15s ease;
+            color: #b00020;
+        }
+
+        .message:hover .message-delete-btn {
+            opacity: 1;
+        }
+
+        .message-delete-btn:hover {
+            background: #ffebee;
+            border-color: #ffcdd2;
+        }
+
+        .message:hover .copy-button {
             opacity: 1;
         }
 
@@ -694,6 +719,7 @@
             </div>
             <div class="stats">
                 <button class="toggle-sidebar" style="margin-right: 12px;" onclick="clearChat()">🧹 Clear Chat</button>
+                <button class="danger-button" style="background: #ff9800; margin-right: 12px;" onclick="pruneData()">✂ Prune Data</button>
                 <button class="danger-button" onclick="resetAllData()">⚠ Reset All Data</button>
             </div>
         </div>
@@ -1099,6 +1125,14 @@
                             </div>
                             <button
                                 type="button"
+                                title="Open PDF"
+                                style="border: none; background: transparent; cursor: pointer; font-size: 14px; padding: 0 4px;"
+                                onclick="event.stopPropagation(); window.open('/api/files/${encodeURIComponent(paper.filename)}', '_blank')"
+                            >
+                                📄
+                            </button>
+                            <button
+                                type="button"
                                 title="View Citation Map"
                                 style="border: none; background: transparent; cursor: pointer; font-size: 14px; padding: 0 4px;"
                                 onclick="event.stopPropagation(); openCitationMap('${paper.id}')"
@@ -1203,19 +1237,38 @@
                     .replace(/&gt;/g, '>')
                     .replace(/&lt;/g, '<')
                     .replace(/&amp;/g, '&')
-                    .replace(/&quot;/g, '"');
+                    .replace(/&quot;/g, '"')
+                    .replace(/&#39;/g, "'");
 
                 // 3. Remove chatty lines (References, Notes) that break syntax
                 processed = processed.replace(/^\s*[\(]?(Reference|Note|Source):.*$/gim, '');
 
-                // 4. Auto-fix unquoted node labels containing parentheses
-                // Matches [text (with) parens] that isn't already quoted
-                processed = processed.replace(/\[([^"\]]*?[\(\)][^"\]]*?)\]/g, '["$1"]');
+                // 4. Robustly fix Mermaid node labels
+                // Strategy: Protect valid quoted labels, then quote any unquoted labels containing special chars.
+                
+                const placeholders = [];
+                // Protect valid quoted labels: A["Label"] or A["Label \"quote\""]
+                processed = processed.replace(/\[\s*"((?:[^"\\]|\\.)*)"\s*\]/g, (match) => {
+                    placeholders.push(match);
+                    return `@@MERMAID_PH_${placeholders.length - 1}@@`;
+                });
 
-                // 5. Auto-fix unquoted node labels containing nested brackets
-                // Matches [text [with] brackets] that isn't already quoted
-                // This handles common cases like arrays [1, 2] or citations [1] inside nodes
-                processed = processed.replace(/\[([^"\]]*?\[[^"\]]*?\])\]/g, '["$1"]');
+                // Fix unquoted labels: A[Label]
+                // Matches balanced brackets (supports 1 level of nesting like [Citation [1]])
+                processed = processed.replace(/\[((?:[^\[\]]|\[[^\[\]]*\])*)\]/g, (match, labelContent) => {
+                    // Check if it needs quoting (contains parens, braces, quotes, or brackets)
+                    if (/[\(\)\{\}"']/.test(labelContent) || /\[|\]/.test(labelContent)) {
+                        // Escape existing quotes
+                        const escaped = labelContent.replace(/"/g, '\\"');
+                        return `["${escaped}"]`;
+                    }
+                    return match;
+                });
+
+                // Restore placeholders
+                processed = processed.replace(/@@MERMAID_PH_(\d+)@@/g, (match, idx) => {
+                    return placeholders[parseInt(idx)] || match;
+                });
 
                 return `<div class="mermaid">${processed}</div>`;
             });
@@ -1447,7 +1500,7 @@
             }
         }
 
-        function addMessage(content, role, sources = []) {
+        function addMessage(content, role, sources = [], messageId = null) {
             const chatContainer = document.getElementById('chatContainer');
             
             // Remove empty state if exists
@@ -1457,15 +1510,23 @@
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${role}`;
 
-            if (role === 'assistant') {
-                const copyBtn = document.createElement('button');
-                copyBtn.className = 'copy-button';
-                copyBtn.type = 'button';
-                copyBtn.textContent = '⧉';
-                copyBtn.title = 'Copy response';
-                copyBtn.onclick = () => copyAssistantMessage(messageDiv, content);
-                messageDiv.appendChild(copyBtn);
+            if (messageId) {
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'message-delete-btn';
+                deleteBtn.type = 'button';
+                deleteBtn.textContent = '🗑';
+                deleteBtn.title = 'Delete message';
+                deleteBtn.onclick = () => deleteMessage(messageId, messageDiv);
+                messageDiv.appendChild(deleteBtn);
             }
+
+            const copyBtn = document.createElement('button');
+            copyBtn.className = 'copy-button';
+            copyBtn.type = 'button';
+            copyBtn.textContent = '⧉';
+            copyBtn.title = 'Copy message';
+            copyBtn.onclick = () => copyAssistantMessage(messageDiv, content);
+            messageDiv.appendChild(copyBtn);
 
             // Create content div
             const contentDiv = document.createElement('div');
@@ -1763,7 +1824,7 @@
                 chatContainer.innerHTML = '';
                 for (const msg of messages) {
                     const role = msg.role === 'assistant' ? 'assistant' : 'user';
-                    addMessage(msg.content, role, msg.source_papers || []);
+                    addMessage(msg.content, role, msg.source_papers || [], msg.id);
                 }
 
                 updateChatBackground();
@@ -1942,6 +2003,32 @@
             } catch (e) {
                 console.error('Failed to reset all data', e);
                 alert('Error resetting data');
+            }
+        }
+
+        async function pruneData() {
+            const confirmed = window.confirm('This will delete all papers that are NOT used in any saved session.\n\nAre you sure?');
+            if (!confirmed) return;
+
+            try {
+                const res = await fetch(`${API_URL}/admin/prune`, { method: 'POST' });
+                if (!res.ok) {
+                    alert('Failed to prune data');
+                    return;
+                }
+                const data = await res.json();
+                alert(data.message);
+                
+                // Reload papers list to reflect changes
+                if (sessionId) {
+                    await loadSession(sessionId);
+                } else {
+                    // Reload all papers (pass null/undefined to show all)
+                    await loadPapers();
+                }
+            } catch (e) {
+                console.error('Failed to prune data', e);
+                alert('Error pruning data');
             }
         }
 
@@ -2154,6 +2241,32 @@
 
         // Initialize progress stream
         initProgressStream();
+
+        async function deleteMessage(messageId, element) {
+            if (!confirm('Delete this message?')) return;
+            
+            try {
+                const res = await fetch(`${API_URL}/chat/message/${messageId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (res.ok) {
+                    element.remove();
+                    // If no messages left, show empty state
+                    const chatContainer = document.getElementById('chatContainer');
+                    if (chatContainer.children.length === 0) {
+                         chatContainer.innerHTML = '<div class="empty-state">Ask a question about the papers</div>';
+                    }
+                    // Update token stats as deleting a message changes the context size
+                    await updateTokenStats();
+                } else {
+                    alert('Failed to delete message');
+                }
+            } catch (e) {
+                console.error('Error deleting message', e);
+                alert('Error deleting message');
+            }
+        }
     </script>
 </body>
 </html>

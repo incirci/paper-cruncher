@@ -647,3 +647,15 @@ async def duplicate_session(request: Request, session_id: str):
         return {"session_id": new_session_id, "message": "Session duplicated"}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.delete("/chat/message/{message_id}")
+async def delete_message(request: Request, message_id: int):
+    """Delete a specific message."""
+    app_state = request.app.state.app_state
+    
+    success = app_state.conversation_manager.delete_message(message_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Message not found")
+        
+    return {"message": "Message deleted"}

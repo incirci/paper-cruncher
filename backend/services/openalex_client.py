@@ -193,3 +193,18 @@ class OpenAlexClient:
                 self.logger.warning(f"Failed to save cache for {work_id}: {e}")
                 
             return data
+
+    def clear_cache(self, work_id: str) -> None:
+        """Remove cached data for a specific work ID."""
+        if not work_id:
+            return
+            
+        short_id = work_id.split("/")[-1]
+        cache_path = self.cache_dir / f"oa_{short_id}.json"
+        
+        if cache_path.exists():
+            try:
+                cache_path.unlink()
+                self.logger.info(f"Cleared cache for {short_id}")
+            except Exception as e:
+                self.logger.warning(f"Failed to clear cache for {short_id}: {e}")
