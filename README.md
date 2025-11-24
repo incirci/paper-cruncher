@@ -98,6 +98,7 @@ The app will be available at `http://localhost:8000`.
    - Indexed into the vector database
    - Available immediately for chat and mindmap
 4. Uploaded papers persist across restarts
+5. **Open PDF**: Click the file icon (📄) next to any paper in the list to open the PDF in a new browser tab.
 
 ### Managing Sessions
 
@@ -112,6 +113,12 @@ The app will be available at `http://localhost:8000`.
 3. Click any session to switch to it (loads full chat history and papers)
 4. Delete sessions using the ✕ button next to each session
 5. Sessions are sorted by most recent activity
+
+**Selective Message Deletion:**
+
+- Hover over any message (user or assistant) to reveal the trash icon (🗑).
+- Click the icon to delete that specific message from the conversation history.
+- This is useful for removing erroneous queries or cleaning up the context window.
 
 **Duplicate Session:**
 
@@ -232,9 +239,11 @@ The app will be available at `http://localhost:8000`.
   - Papers saved to persistent `data/uploads/` directory
   - Session-aware uploads (merge into current session)
 - **Conversation History**: Chat maintains context across messages
+- **Selective Deletion**: Delete individual messages to refine context
 - **Source Citations**: AI references which papers it's using
 - **Streaming Responses**: See answers as they're generated
 - **Markdown Formatting**: Responses include tables, lists, and code blocks
+- **Mermaid Diagrams**: Auto-renders flowcharts and graphs in responses
 - **Token Tracking**: Monitor API usage in real-time per session (includes hidden orchestration costs)
 - **Canonical Paper Titles**: Consistent titles across UI, DB, and mindmaps
 - **Smart Mindmaps**:
@@ -279,6 +288,7 @@ cruncher/
 - `PATCH /api/chat/session/{session_id}/name` - Rename session
 - `POST /api/chat/session/{session_id}/context` - Update session papers
 - `POST /api/chat/session/{session_id}/clear` - Clear messages (keep context)
+- `DELETE /api/chat/message/{message_id}` - Delete specific message
 - `GET /api/chat/history/{session_id}` - Get conversation history
 - `DELETE /api/chat/history/{session_id}` - Clear conversation (deprecated)
 
@@ -289,6 +299,7 @@ cruncher/
 - `POST /api/papers/upload` - Upload PDFs (with optional session_id)
 - `POST /api/papers/reindex` - Rebuild vector index from metadata (useful after resets or manual changes)
 - `GET /api/papers/{paper_id}/citations` - Get citation graph (OpenAlex)
+- `GET /api/files/{filename}` - Serve PDF file content
 
 ### Mindmap
 

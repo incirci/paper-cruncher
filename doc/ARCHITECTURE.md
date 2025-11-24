@@ -71,6 +71,7 @@ cruncher/
 4. **Models Layer** (`backend/models/`)
    - Pydantic schemas and DTOs
    - Paper metadata including a canonical title used consistently across UI, vector DB, and mindmap
+   - Message schema now includes `id` for selective deletion
 
 5. **Utils Layer** (`backend/utils/`)
    - Token counters
@@ -93,6 +94,8 @@ User Request (Citation Map) → FastAPI → CitationService → Local Cache / Op
                               Response (Hierarchical JSON with Citation Counts & URLs)
                                   ↓
                               D3.js (Logarithmic Sizing, Influence Sorting, Click Handlers)
+
+User Request (Open PDF) → FastAPI (StaticFiles mount) → data/uploads/{filename} → Browser
 
 Background Tasks (Upload/Reindex) → ProgressManager → SSE Stream (/api/progress) → Frontend UI
 
