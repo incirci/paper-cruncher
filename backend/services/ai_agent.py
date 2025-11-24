@@ -581,7 +581,11 @@ For DENSITY, use: normal (default, 5 chunks) or high (deep dive, 20 chunks)
             history_text = "Conversation History:\n"
             for msg in conversation_history[-5:]: # Limit history
                 role = "User" if msg.role == MessageRole.USER else "Assistant"
-                history_text += f"{role}: {msg.content}\n"
+                content = msg.content
+                # Truncate very long messages to save tokens
+                if len(content) > 1500:
+                    content = content[:1500] + "... (truncated)"
+                history_text += f"{role}: {content}\n"
             history_text += "\n"
 
         return f'''{self.system_prompt}
@@ -768,7 +772,7 @@ Formatting Guidelines:
             )
         context = await self._build_context(
             relevant_chunks,
-            include_overview=True,
+            include_overview=False,
             allowed_paper_ids=allowed_paper_ids,
         )
         source_papers = self._extract_source_papers(relevant_chunks)

@@ -8,13 +8,13 @@ port = 8000
 [agent]
 model = "gemini-2.5-flash-preview-09-2025"  #"gemini-2.5-flash-preview-09-2025"
 max_context_tokens = 1000000 # max 1,048,576
-max_response_tokens = 65536  # max 65,536
+max_response_tokens = 8192  # max 65,536
 temperature = 0.2   # setting for factuality, lower (min 0.0) more factual, higher (max 1.0) more imaginative 
 # Orchestrator-specific settings (used only for planning)
 # Choose a stable, lower-temp model to reduce safety blocks
 orchestrator_model = "gemini-2.5-flash-preview-09-2025"
 orchestrator_temperature = 0.2
-orchestrator_max_output_tokens = 65536
+orchestrator_max_output_tokens = 2048
 
 [memory]
 persist_across_sessions = true
@@ -35,7 +35,7 @@ conversation_db_path = "./data/conversations.db"
 [chunking]
 chunk_size = 1000
 chunk_overlap = 200
-max_chunks_per_query = 10  # high density querries use *4 times more chunks
+max_chunks_per_query = 5  # high density querries use *4 times more chunks
 min_title_snippet_chars = 2000
 title_snippet_chars = 10000
 
