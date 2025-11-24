@@ -60,10 +60,18 @@ class ConversationManager:
                         updated_at TEXT NOT NULL,
                         total_tokens INTEGER DEFAULT 0,
                         selected_paper_id TEXT,
-                        paper_ids TEXT
+                        paper_ids TEXT,
+                        notes TEXT
                     )
                     """
                 )
+
+                # Attempt to add notes column if it doesn't exist (migration for existing DBs)
+                try:
+                    cursor.execute("ALTER TABLE conversations ADD COLUMN notes TEXT")
+                except sqlite3.OperationalError:
+                    # Column likely already exists
+                    pass
 
                 # Messages table
                 cursor.execute("""
@@ -198,7 +206,7 @@ class ConversationManager:
                 # Get conversation
                 cursor.execute(
                     """
-                    SELECT session_id, session_name, created_at, updated_at, total_tokens, selected_paper_id, paper_ids
+                    SELECT session_id, session_name, created_at, updated_at, total_tokens, selected_paper_id, paper_ids, notes
                     FROM conversations
                     WHERE session_id = ?
                 """,
@@ -249,6 +257,7 @@ class ConversationManager:
                     messages=messages,
                     selected_paper_id=conv_row[5],
                     paper_ids=paper_ids,
+                    notes=conv_row[7],
                 )
 
     def get_conversation_history(self, session_id: str) -> List[Message]:
@@ -299,7 +308,7 @@ class ConversationManager:
 
                 cursor.execute("""
                     SELECT c.session_id, c.session_name, c.created_at, c.updated_at, c.total_tokens, 
-                           c.selected_paper_id, c.paper_ids,
+                           c.selected_paper_id, c.paper_ids, c.notes,
                            COUNT(m.id) as message_count
                     FROM conversations c
                     LEFT JOIN messages m ON c.session_id = m.session_id
@@ -318,7 +327,8 @@ class ConversationManager:
                             "total_tokens": row[4],
                             "selected_paper_id": row[5],
                             "paper_ids": row[6],
-                            "message_count": row[7],
+                            "notes": row[7],
+                            "message_count": row[8],
                         }
                     )
 
@@ -413,3 +423,22 @@ class ConversationManager:
                 cursor.execute("DELETE FROM messages WHERE id = ?", (message_id,))
                 conn.commit()
                 return cursor.rowcount > 0
+
+    def update_session_notes(self, session_id: str, notes: str) -> bool:
+        """Update the notes for a specific session."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    UPDATE conversations 
+                    SET notes = ?, updated_at = ?
+                    WHERE session_id = ?
+                    """,
+                    (notes, datetime.now().isoformat(), session_id),
+                )
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            print(f"Error updating session notes: {e}")
+            return False

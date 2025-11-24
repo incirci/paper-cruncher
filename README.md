@@ -134,6 +134,12 @@ The app will be available at `http://localhost:8000`.
 3. Preserves currently selected papers unless you change them
 4. Previous session is automatically saved to history
 
+**Session Notes:**
+
+- Click the "📝 Notes" button in the header to open a scratchpad for the current session.
+- Notes are saved automatically per session.
+- Useful for jotting down key insights, to-do lists, or summaries while chatting.
+
 **Session Behavior:**
 
 - All sessions are visible in the sidebar

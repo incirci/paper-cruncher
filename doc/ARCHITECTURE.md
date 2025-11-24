@@ -72,6 +72,7 @@ cruncher/
    - Pydantic schemas and DTOs
    - Paper metadata including a canonical title used consistently across UI, vector DB, and mindmap
    - Message schema now includes `id` for selective deletion
+   - Conversation schema includes `notes` for session-specific user remarks
 
 5. **Utils Layer** (`backend/utils/`)
    - Token counters

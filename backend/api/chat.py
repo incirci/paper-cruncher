@@ -659,3 +659,25 @@ async def delete_message(request: Request, message_id: int):
         raise HTTPException(status_code=404, detail="Message not found")
         
     return {"message": "Message deleted"}
+
+
+@router.patch("/chat/session/{session_id}/notes")
+async def update_session_notes(request: Request, session_id: str, payload: dict = Body(...)):
+    """Update session notes.
+    
+    Args:
+        session_id: Session ID to update
+        payload: JSON body with 'notes' field
+    """
+    app_state = request.app.state.app_state
+
+    if not app_state.conversation_manager.session_exists(session_id):
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    notes = payload.get("notes", "")
+    
+    success = app_state.conversation_manager.update_session_notes(session_id, notes)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to update notes")
+
+    return {"message": "Session notes updated", "notes": notes}

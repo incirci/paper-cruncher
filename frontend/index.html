@@ -667,6 +667,76 @@
             color: #999;
             font-size: 14px;
         }
+
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal-content {
+            background: white;
+            width: 600px;
+            max-width: 90%;
+            height: 80vh;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .modal-header {
+            padding: 16px;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-header h3 {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .modal-body {
+            flex: 1;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .notes-textarea {
+            flex: 1;
+            width: 100%;
+            resize: none;
+            padding: 12px;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .notes-textarea:focus {
+            outline: none;
+            border-color: #007bff;
+        }
+
+        .modal-footer {
+            padding: 16px;
+            border-top: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+        }
     </style>
 </head>
 <body>
@@ -716,6 +786,7 @@
             <div style="display: flex; gap: 12px; align-items: center;">
                 <button class="toggle-sidebar" onclick="toggleSessionsSidebar()">💬 Sessions</button>
                 <button class="toggle-sidebar" onclick="toggleSidebar()">☰ Papers</button>
+                <button class="toggle-sidebar" onclick="openNotes()">📝 Notes</button>
             </div>
             <div class="stats">
                 <button class="toggle-sidebar" style="margin-right: 12px;" onclick="clearChat()">🧹 Clear Chat</button>
@@ -757,6 +828,23 @@
         <button class="new-session-btn" onclick="duplicateSession()" style="background: #6c757d; margin-top: 0;">❐ Duplicate Session</button>
         <div class="sessions-list" id="sessionsList">
             <div class="empty-state" style="padding: 20px; text-align: center; color: #999; font-size: 13px;">No saved sessions</div>
+        </div>
+    </div>
+
+    <!-- Notes Modal -->
+    <div class="modal-overlay" id="notesModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Session Notes</h3>
+                <button class="toggle-sidebar" style="padding: 4px 8px;" onclick="closeNotes()">✕</button>
+            </div>
+            <div class="modal-body">
+                <textarea class="notes-textarea" id="sessionNotes" placeholder="Add notes for this session..."></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="index-button secondary" onclick="closeNotes()" style="width: auto;">Close</button>
+                <button class="index-button" onclick="saveNotes()" style="width: auto;">Save Notes</button>
+            </div>
         </div>
     </div>
 
@@ -843,6 +931,7 @@
         let autoScroll = true;
         let currentPaperIds = [];
         let activeSessionLabel = '';
+        let currentNotes = '';
 
         const LAST_SESSION_KEY = 'paper_cruncher_last_session_id';
 
@@ -1871,6 +1960,7 @@
                 const conversation = await res.json();
 
                 sessionId = conversation.session_id;
+                currentNotes = conversation.notes || '';
                 updateActiveSessionLabel(conversation.session_name, sessionId);
                 try {
                     window.sessionStorage.setItem(LAST_SESSION_KEY, sessionId);
@@ -2340,6 +2430,1137 @@
             } catch (e) {
                 console.error('Error deleting message', e);
                 alert('Error deleting message');
+            }
+        }
+
+        function openNotes() {
+            if (!sessionId) {
+                alert('Please create or select a session first.');
+                return;
+            }
+            const modal = document.getElementById('notesModal');
+            const textarea = document.getElementById('sessionNotes');
+            textarea.value = currentNotes || '';
+            modal.style.display = 'flex';
+            textarea.focus();
+        }
+
+        function closeNotes() {
+            document.getElementById('notesModal').style.display = 'none';
+        }
+
+        async function saveNotes() {
+            if (!sessionId) return;
+            
+            const textarea = document.getElementById('sessionNotes');
+            const newNotes = textarea.value;
+            const btn = document.querySelector('#notesModal .index-button:not(.secondary)');
+            const originalText = btn.textContent;
+            
+            btn.textContent = 'Saving...';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch(`${API_URL}/chat/session/${sessionId}/notes`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ notes: newNotes }),
+                });
+
+                if (res.ok) {
+                    currentNotes = newNotes;
+                    btn.textContent = 'Saved!';
+                    setTimeout(() => {
+                        btn.textContent = originalText;
+                        btn.disabled = false;
+                        closeNotes();
+                    }, 1000);
+                } else {
+                    throw new Error('Failed to save notes');
+                }
+            } catch (e) {
+                console.error('Error saving notes', e);
+                btn.textContent = 'Error';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.disabled = false;
+                }, 2000);
+            }
+        }
+
+        async function loadSession(id) {
+            try {
+                const res = await fetch(`${API_URL}/chat/session/${id}`);
+                if (!res.ok) {
+                    alert('Session not found');
+                    return;
+                }
+                const conversation = await res.json();
+
+                sessionId = conversation.session_id;
+                currentNotes = conversation.notes || '';
+                updateActiveSessionLabel(conversation.session_name, sessionId);
+                try {
+                    window.sessionStorage.setItem(LAST_SESSION_KEY, sessionId);
+                } catch (e) {
+                    console.warn('Could not persist last session id', e);
+                }
+                const messages = conversation.messages || [];
+                const selected = conversation.selected_paper_id || null;
+                const sessionPaperIds = conversation.paper_ids || [];
+
+                // Refresh papers list scoped to this session's paper_ids
+                await loadPapers(sessionPaperIds);
+
+                // Restore selected paper in UI if it still exists
+                selectedPaperId = selected && sessionPaperIds.includes(selected) ? selected : null;
+                document.querySelectorAll('.paper-item').forEach(item => {
+                    if (selectedPaperId && item.dataset.paperId === selectedPaperId) {
+                        item.classList.add('selected');
+                    } else {
+                        item.classList.remove('selected');
+                    }
+                });
+
+                // Re-render chat history
+                const chatContainer = document.getElementById('chatContainer');
+                chatContainer.innerHTML = '';
+                for (const msg of messages) {
+                    const role = msg.role === 'assistant' ? 'assistant' : 'user';
+                    addMessage(msg.content, role, msg.source_papers || [], msg.id);
+                }
+
+                updateChatBackground();
+                await updateTokenStats();
+
+                // Ensure we are scrolled to the latest message after reload
+                try {
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                } catch {}
+            } catch (err) {
+                console.error('Failed to load session', err);
+                alert('Error loading session');
+            }
+        }
+
+        async function clearChat() {
+            if (!sessionId) {
+                // No session, just clear UI
+                const chatContainer = document.getElementById('chatContainer');
+                chatContainer.innerHTML = '<div class="empty-state">Ask a question about the papers</div>';
+                autoScroll = true;
+                return;
+            }
+
+            try {
+                // Clear messages from backend
+                const res = await fetch(`${API_URL}/chat/session/${sessionId}/clear`, {
+                    method: 'POST',
+                });
+                
+                if (!res.ok) {
+                    console.error('Failed to clear chat history');
+                    return;
+                }
+                
+                // Clear UI
+                const chatContainer = document.getElementById('chatContainer');
+                chatContainer.innerHTML = '<div class="empty-state">Ask a question about the papers</div>';
+                autoScroll = true;
+                
+                // Update token stats
+                await updateTokenStats();
+            } catch (e) {
+                console.error('Error clearing chat', e);
+            }
+        }
+
+        async function newSession() {
+            const chatContainer = document.getElementById('chatContainer');
+            
+            // Delete current session if it has no messages (papers don't matter)
+            if (sessionId) {
+                try {
+                    const conv = await fetch(`${API_URL}/chat/session/${sessionId}`);
+                    if (conv.ok) {
+                        const data = await conv.json();
+                        const messages = data.messages || [];
+                        
+                        // Delete if no messages
+                        if (messages.length === 0) {
+                            await fetch(`${API_URL}/chat/session/${sessionId}`, { method: 'DELETE' });
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Could not check/delete empty session', e);
+                }
+            }
+            
+            // Clear UI
+            chatContainer.innerHTML = '<div class="empty-state">Ask a question about the papers</div>';
+            autoScroll = true;
+
+            // Create a brand new backend session with empty paper_ids
+            try {
+                const res = await fetch(`${API_URL}/chat/session`, { method: 'POST' });
+                if (!res.ok) {
+                    console.error('Failed to create new chat session');
+                    return;
+                }
+                
+                const data = await res.json();
+                sessionId = data.session_id;
+                updateActiveSessionLabel(null, sessionId);
+                try {
+                    window.sessionStorage.setItem(LAST_SESSION_KEY, sessionId);
+                } catch (e) {
+                    console.warn('Could not persist last session id', e);
+                }
+                
+                // Clear local state before saving to backend
+                currentPaperIds = [];
+                selectedPaperId = null;
+                
+                // Persist empty paper context and reload session from backend
+                await saveSessionContext();
+                
+                // UI now follows backend: loadSession will refresh sidebar from backend state
+                await loadSession(sessionId);
+                
+                // Refresh sessions sidebar if open
+                const sessionsSidebar = document.getElementById('sessionsSidebar');
+                if (!sessionsSidebar.classList.contains('collapsed')) {
+                    await loadSessionsList();
+                }
+            } catch (e) {
+                console.error('Error creating new session', e);
+            }
+        }
+
+        async function deleteSession() {
+            if (!sessionId) {
+                // Nothing to delete; just create a new empty session
+                await newSession();
+                return;
+            }
+
+            try {
+                // Delete current session from backend
+                await fetch(`${API_URL}/chat/session/${sessionId}`, { method: 'DELETE' });
+            } catch (e) {
+                console.error('Error deleting session', e);
+            }
+
+            // Create a fresh empty session and reload from backend
+            try {
+                const createRes = await fetch(`${API_URL}/chat/session`, { method: 'POST' });
+                if (createRes.ok) {
+                    const data = await createRes.json();
+                    sessionId = data.session_id;
+                    updateActiveSessionLabel(null, sessionId);
+                    try {
+                        window.sessionStorage.setItem(LAST_SESSION_KEY, sessionId);
+                    } catch (e) {
+                        console.warn('Could not persist last session id', e);
+                    }
+                    
+                    // Clear local state before saving
+                    currentPaperIds = [];
+                    selectedPaperId = null;
+                    
+                    // Save empty context and reload UI from backend
+                    await saveSessionContext();
+                    await loadSession(sessionId);
+                    
+                    // Refresh sessions sidebar if open
+                    const sessionsSidebar = document.getElementById('sessionsSidebar');
+                    if (!sessionsSidebar.classList.contains('collapsed')) {
+                        await loadSessionsList();
+                    }
+                } else {
+                    console.error('Failed to create new session after delete');
+                }
+            } catch (e) {
+                console.error('Error creating new session after delete', e);
+            }
+        }
+
+        async function resetAllData() {
+            const confirmed = window.confirm('This will delete ALL papers, vector DB, conversations, and metadata. This cannot be undone.\n\nAre you sure?');
+            if (!confirmed) return;
+
+            try {
+                const res = await fetch(`${API_URL}/admin/reset`, { method: 'POST' });
+                if (!res.ok) {
+                    alert('Failed to reset data');
+                    return;
+                }
+
+                // After reset, clear local state and reload page for a clean start.
+                try {
+                    window.sessionStorage.removeItem(LAST_SESSION_KEY);
+                } catch (_) {}
+
+                alert('All data has been reset. The page will reload.');
+                window.location.reload();
+            } catch (e) {
+                console.error('Failed to reset all data', e);
+                alert('Error resetting data');
+            }
+        }
+
+        async function pruneData() {
+            const confirmed = window.confirm('This will delete all papers that are NOT used in any saved session.\n\nAre you sure?');
+            if (!confirmed) return;
+
+            try {
+                const res = await fetch(`${API_URL}/admin/prune`, { method: 'POST' });
+                if (!res.ok) {
+                    alert('Failed to prune data');
+                    return;
+                }
+                const data = await res.json();
+                alert(data.message);
+                
+                // Reload papers list to reflect changes
+                if (sessionId) {
+                    await loadSession(sessionId);
+                } else {
+                    // Reload all papers (pass null/undefined to show all)
+                    await loadPapers();
+                }
+            } catch (e) {
+                console.error('Failed to prune data', e);
+                alert('Error pruning data');
+            }
+        }
+
+        async function removePaperFromSession(paperId) {
+            if (!sessionId) return;
+            
+            try {
+                // Fetch current session state from backend
+                const res = await fetch(`${API_URL}/chat/session/${sessionId}`);
+                if (!res.ok) return;
+                
+                const data = await res.json();
+                const currentPapers = data.paper_ids || [];
+                
+                // Remove paper from backend state
+                const updatedPapers = currentPapers.filter(id => id !== paperId);
+                const updatedSelected = data.selected_paper_id === paperId ? null : data.selected_paper_id;
+                
+                // Update backend first
+                const updateRes = await fetch(`${API_URL}/chat/session/${sessionId}/context`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        selected_paper_id: updatedSelected,
+                        paper_ids: updatedPapers,
+                    }),
+                });
+                
+                if (updateRes.ok) {
+                    // Backend updated successfully, now reload UI from backend
+                    await loadSession(sessionId);
+                }
+            } catch (err) {
+                console.error('Failed to remove paper from session', err);
+            }
+        }
+
+        function updateActiveSessionLabel(name, id) {
+            const baseTitle = 'Journal Article AI Assistant';
+
+            if (!id) {
+                document.title = baseTitle;
+                return;
+            }
+            
+            if (name) {
+                document.title = `${name} - ${baseTitle}`;
+            } else {
+                const shortId = String(id).slice(0, 8);
+                document.title = `Session ${shortId} - ${baseTitle}`;
+            }
+        }
+
+        async function saveSessionContext(opts = {}) {
+            if (!sessionId) return;
+            try {
+                const res = await fetch(`${API_URL}/chat/session/${sessionId}/context`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        selected_paper_id: selectedPaperId,
+                        paper_ids: currentPaperIds,
+                    }),
+                });
+
+                if (res.ok) {
+                    // After saving, reload the full session from the
+                    // backend so the sidebar and local state always
+                    // reflect the canonical session context (paper_ids
+                    // and selected_paper_id).
+                    const shouldReload = opts.reload !== false;
+                    if (shouldReload && !isStreaming) {
+                        await loadSession(sessionId);
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to save session context', err);
+            }
+        }
+
+        async function updateTokenStats() {
+            // Token stats are shown in the sidebar, so refresh the list to update them
+            if (sessionId) {
+                await loadSessionsList();
+            }
+        }
+
+        // Auto-resume a previous session on page load; if none exists,
+        // create a new empty session just like a first-time launch.
+        window.addEventListener('load', async () => {
+            try {
+                // Load sessions list on page load
+                await loadSessionsList();
+                
+                const lastId = window.sessionStorage.getItem(LAST_SESSION_KEY);
+                if (lastId) {
+                    const res = await fetch(`${API_URL}/chat/session/${lastId}`);
+                    if (res.ok) {
+                        await loadSession(lastId);
+                        // updateActiveSessionLabel is handled by loadSession
+                        return;
+                    }
+                    // Session no longer exists; clear stored id
+                    window.sessionStorage.removeItem(LAST_SESSION_KEY);
+                }
+
+                // No valid previous session: create a brand new session
+                // so the behavior matches a fresh app launch.
+                const createRes = await fetch(`${API_URL}/chat/session`, {
+                    method: 'POST',
+                });
+                if (!createRes.ok) {
+                    console.warn('Failed to create initial session');
+                    updateActiveSessionLabel(null, null);
+                    return;
+                }
+                const created = await createRes.json();
+                sessionId = created.session_id;
+                updateActiveSessionLabel(null, sessionId);
+                try {
+                    window.sessionStorage.setItem(LAST_SESSION_KEY, sessionId);
+                } catch (e) {
+                    console.warn('Could not persist last session id', e);
+                }
+                // Persist empty paper context and sync UI from backend
+                await saveSessionContext();
+                // Refresh sessions list after creating new session
+                await loadSessionsList();
+            } catch (e) {
+                console.warn('Failed to initialize session on load', e);
+            }
+        });
+
+        async function duplicateSession() {
+            if (!sessionId) {
+                alert("No active session to duplicate.");
+                return;
+            }
+            
+            try {
+                const res = await fetch(`${API_URL}/chat/session/${sessionId}/duplicate`, {
+                    method: 'POST'
+                });
+                
+                if (res.ok) {
+                    const data = await res.json();
+                    // Switch to the new session
+                    await switchToSession(data.session_id);
+                } else {
+                    alert("Failed to duplicate session");
+                }
+            } catch (e) {
+                console.error("Error duplicating session", e);
+                alert("Error duplicating session");
+            }
+        }
+
+        function initProgressStream() {
+            const evtSource = new EventSource(`${API_URL}/progress`);
+            const container = document.getElementById('progressContainer');
+            const bar = document.getElementById('progressBar');
+            const status = document.getElementById('progressStatus');
+            const percent = document.getElementById('progressPercent');
+
+            evtSource.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    
+                    if (data.status === 'processing') {
+                        container.style.display = 'block';
+                        const pct = Math.round(data.progress || 0);
+                        bar.style.width = `${pct}%`;
+                        status.textContent = data.message || 'Processing...';
+                        percent.textContent = `${pct}%`;
+                    } else if (data.status === 'completed') {
+                        bar.style.width = '100%';
+                        percent.textContent = '100%';
+                        status.textContent = 'Done!';
+                        
+                        // Refresh papers list if we just finished indexing
+                        if (sessionId) {
+                            loadSession(sessionId);
+                        } else {
+                            loadPapers();
+                        }
+
+                        setTimeout(() => {
+                            container.style.display = 'none';
+                            bar.style.width = '0%';
+                        }, 3000);
+                    } else if (data.status === 'error') {
+                        status.textContent = 'Error: ' + (data.message || 'Unknown error');
+                        status.style.color = '#b00020';
+                        setTimeout(() => {
+                            container.style.display = 'none';
+                            status.style.color = '';
+                        }, 5000);
+                    }
+                } catch (e) {
+                    console.error('Error parsing progress event', e);
+                }
+            };
+            
+            evtSource.onerror = function(err) {
+                // EventSource will try to reconnect automatically
+                // We can just log it for debugging
+                // console.debug("Progress stream connection lost, reconnecting...", err);
+            };
+        }
+
+        // Initialize progress stream
+        initProgressStream();
+
+        async function deleteMessage(messageId, element) {
+            if (!confirm('Delete this message?')) return;
+            
+            try {
+                const res = await fetch(`${API_URL}/chat/message/${messageId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (res.ok) {
+                    element.remove();
+                    // If no messages left, show empty state
+                    const chatContainer = document.getElementById('chatContainer');
+                    if (chatContainer.children.length === 0) {
+                         chatContainer.innerHTML = '<div class="empty-state">Ask a question about the papers</div>';
+                    }
+                    // Update token stats as deleting a message changes the context size
+                    await updateTokenStats();
+                } else {
+                    alert('Failed to delete message');
+                }
+            } catch (e) {
+                console.error('Error deleting message', e);
+                alert('Error deleting message');
+            }
+        }
+
+        function openNotes() {
+            if (!sessionId) {
+                alert('Please create or select a session first.');
+                return;
+            }
+            const modal = document.getElementById('notesModal');
+            const textarea = document.getElementById('sessionNotes');
+            textarea.value = currentNotes || '';
+            modal.style.display = 'flex';
+            textarea.focus();
+        }
+
+        function closeNotes() {
+            document.getElementById('notesModal').style.display = 'none';
+        }
+
+        async function saveNotes() {
+            if (!sessionId) return;
+            
+            const textarea = document.getElementById('sessionNotes');
+            const newNotes = textarea.value;
+            const btn = document.querySelector('#notesModal .index-button:not(.secondary)');
+            const originalText = btn.textContent;
+            
+            btn.textContent = 'Saving...';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch(`${API_URL}/chat/session/${sessionId}/notes`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ notes: newNotes }),
+                });
+
+                if (res.ok) {
+                    currentNotes = newNotes;
+                    btn.textContent = 'Saved!';
+                    setTimeout(() => {
+                        btn.textContent = originalText;
+                        btn.disabled = false;
+                        closeNotes();
+                    }, 1000);
+                } else {
+                    throw new Error('Failed to save notes');
+                }
+            } catch (e) {
+                console.error('Error saving notes', e);
+                btn.textContent = 'Error';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.disabled = false;
+                }, 2000);
+            }
+        }
+
+        async function loadSession(id) {
+            try {
+                const res = await fetch(`${API_URL}/chat/session/${id}`);
+                if (!res.ok) {
+                    alert('Session not found');
+                    return;
+                }
+                const conversation = await res.json();
+
+                sessionId = conversation.session_id;
+                currentNotes = conversation.notes || '';
+                updateActiveSessionLabel(conversation.session_name, sessionId);
+                try {
+                    window.sessionStorage.setItem(LAST_SESSION_KEY, sessionId);
+                } catch (e) {
+                    console.warn('Could not persist last session id', e);
+                }
+                const messages = conversation.messages || [];
+                const selected = conversation.selected_paper_id || null;
+                const sessionPaperIds = conversation.paper_ids || [];
+
+                // Refresh papers list scoped to this session's paper_ids
+                await loadPapers(sessionPaperIds);
+
+                // Restore selected paper in UI if it still exists
+                selectedPaperId = selected && sessionPaperIds.includes(selected) ? selected : null;
+                document.querySelectorAll('.paper-item').forEach(item => {
+                    if (selectedPaperId && item.dataset.paperId === selectedPaperId) {
+                        item.classList.add('selected');
+                    } else {
+                        item.classList.remove('selected');
+                    }
+                });
+
+                // Re-render chat history
+                const chatContainer = document.getElementById('chatContainer');
+                chatContainer.innerHTML = '';
+                for (const msg of messages) {
+                    const role = msg.role === 'assistant' ? 'assistant' : 'user';
+                    addMessage(msg.content, role, msg.source_papers || [], msg.id);
+                }
+
+                updateChatBackground();
+                await updateTokenStats();
+
+                // Ensure we are scrolled to the latest message after reload
+                try {
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                } catch {}
+            } catch (err) {
+                console.error('Failed to load session', err);
+                alert('Error loading session');
+            }
+        }
+
+        async function clearChat() {
+            if (!sessionId) {
+                // No session, just clear UI
+                const chatContainer = document.getElementById('chatContainer');
+                chatContainer.innerHTML = '<div class="empty-state">Ask a question about the papers</div>';
+                autoScroll = true;
+                return;
+            }
+
+            try {
+                // Clear messages from backend
+                const res = await fetch(`${API_URL}/chat/session/${sessionId}/clear`, {
+                    method: 'POST',
+                });
+                
+                if (!res.ok) {
+                    console.error('Failed to clear chat history');
+                    return;
+                }
+                
+                // Clear UI
+                const chatContainer = document.getElementById('chatContainer');
+                chatContainer.innerHTML = '<div class="empty-state">Ask a question about the papers</div>';
+                autoScroll = true;
+                
+                // Update token stats
+                await updateTokenStats();
+            } catch (e) {
+                console.error('Error clearing chat', e);
+            }
+        }
+
+        async function newSession() {
+            const chatContainer = document.getElementById('chatContainer');
+            
+            // Delete current session if it has no messages (papers don't matter)
+            if (sessionId) {
+                try {
+                    const conv = await fetch(`${API_URL}/chat/session/${sessionId}`);
+                    if (conv.ok) {
+                        const data = await conv.json();
+                        const messages = data.messages || [];
+                        
+                        // Delete if no messages
+                        if (messages.length === 0) {
+                            await fetch(`${API_URL}/chat/session/${sessionId}`, { method: 'DELETE' });
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Could not check/delete empty session', e);
+                }
+            }
+            
+            // Clear UI
+            chatContainer.innerHTML = '<div class="empty-state">Ask a question about the papers</div>';
+            autoScroll = true;
+
+            // Create a brand new backend session with empty paper_ids
+            try {
+                const res = await fetch(`${API_URL}/chat/session`, { method: 'POST' });
+                if (!res.ok) {
+                    console.error('Failed to create new chat session');
+                    return;
+                }
+                
+                const data = await res.json();
+                sessionId = data.session_id;
+                updateActiveSessionLabel(null, sessionId);
+                try {
+                    window.sessionStorage.setItem(LAST_SESSION_KEY, sessionId);
+                } catch (e) {
+                    console.warn('Could not persist last session id', e);
+                }
+                
+                // Clear local state before saving to backend
+                currentPaperIds = [];
+                selectedPaperId = null;
+                
+                // Persist empty paper context and reload session from backend
+                await saveSessionContext();
+                
+                // UI now follows backend: loadSession will refresh sidebar from backend state
+                await loadSession(sessionId);
+                
+                // Refresh sessions sidebar if open
+                const sessionsSidebar = document.getElementById('sessionsSidebar');
+                if (!sessionsSidebar.classList.contains('collapsed')) {
+                    await loadSessionsList();
+                }
+            } catch (e) {
+                console.error('Error creating new session', e);
+            }
+        }
+
+        async function deleteSession() {
+            if (!sessionId) {
+                // Nothing to delete; just create a new empty session
+                await newSession();
+                return;
+            }
+
+            try {
+                // Delete current session from backend
+                await fetch(`${API_URL}/chat/session/${sessionId}`, { method: 'DELETE' });
+            } catch (e) {
+                console.error('Error deleting session', e);
+            }
+
+            // Create a fresh empty session and reload from backend
+            try {
+                const createRes = await fetch(`${API_URL}/chat/session`, { method: 'POST' });
+                if (createRes.ok) {
+                    const data = await createRes.json();
+                    sessionId = data.session_id;
+                    updateActiveSessionLabel(null, sessionId);
+                    try {
+                        window.sessionStorage.setItem(LAST_SESSION_KEY, sessionId);
+                    } catch (e) {
+                        console.warn('Could not persist last session id', e);
+                    }
+                    
+                    // Clear local state before saving
+                    currentPaperIds = [];
+                    selectedPaperId = null;
+                    
+                    // Save empty context and reload UI from backend
+                    await saveSessionContext();
+                    await loadSession(sessionId);
+                    
+                    // Refresh sessions sidebar if open
+                    const sessionsSidebar = document.getElementById('sessionsSidebar');
+                    if (!sessionsSidebar.classList.contains('collapsed')) {
+                        await loadSessionsList();
+                    }
+                } else {
+                    console.error('Failed to create new session after delete');
+                }
+            } catch (e) {
+                console.error('Error creating new session after delete', e);
+            }
+        }
+
+        async function resetAllData() {
+            const confirmed = window.confirm('This will delete ALL papers, vector DB, conversations, and metadata. This cannot be undone.\n\nAre you sure?');
+            if (!confirmed) return;
+
+            try {
+                const res = await fetch(`${API_URL}/admin/reset`, { method: 'POST' });
+                if (!res.ok) {
+                    alert('Failed to reset data');
+                    return;
+                }
+
+                // After reset, clear local state and reload page for a clean start.
+                try {
+                    window.sessionStorage.removeItem(LAST_SESSION_KEY);
+                } catch (_) {}
+
+                alert('All data has been reset. The page will reload.');
+                window.location.reload();
+            } catch (e) {
+                console.error('Failed to reset all data', e);
+                alert('Error resetting data');
+            }
+        }
+
+        async function pruneData() {
+            const confirmed = window.confirm('This will delete all papers that are NOT used in any saved session.\n\nAre you sure?');
+            if (!confirmed) return;
+
+            try {
+                const res = await fetch(`${API_URL}/admin/prune`, { method: 'POST' });
+                if (!res.ok) {
+                    alert('Failed to prune data');
+                    return;
+                }
+                const data = await res.json();
+                alert(data.message);
+                
+                // Reload papers list to reflect changes
+                if (sessionId) {
+                    await loadSession(sessionId);
+                } else {
+                    // Reload all papers (pass null/undefined to show all)
+                    await loadPapers();
+                }
+            } catch (e) {
+                console.error('Failed to prune data', e);
+                alert('Error pruning data');
+            }
+        }
+
+        async function removePaperFromSession(paperId) {
+            if (!sessionId) return;
+            
+            try {
+                // Fetch current session state from backend
+                const res = await fetch(`${API_URL}/chat/session/${sessionId}`);
+                if (!res.ok) return;
+                
+                const data = await res.json();
+                const currentPapers = data.paper_ids || [];
+                
+                // Remove paper from backend state
+                const updatedPapers = currentPapers.filter(id => id !== paperId);
+                const updatedSelected = data.selected_paper_id === paperId ? null : data.selected_paper_id;
+                
+                // Update backend first
+                const updateRes = await fetch(`${API_URL}/chat/session/${sessionId}/context`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        selected_paper_id: updatedSelected,
+                        paper_ids: updatedPapers,
+                    }),
+                });
+                
+                if (updateRes.ok) {
+                    // Backend updated successfully, now reload UI from backend
+                    await loadSession(sessionId);
+                }
+            } catch (err) {
+                console.error('Failed to remove paper from session', err);
+            }
+        }
+
+        function updateActiveSessionLabel(name, id) {
+            const baseTitle = 'Journal Article AI Assistant';
+
+            if (!id) {
+                document.title = baseTitle;
+                return;
+            }
+            
+            if (name) {
+                document.title = `${name} - ${baseTitle}`;
+            } else {
+                const shortId = String(id).slice(0, 8);
+                document.title = `Session ${shortId} - ${baseTitle}`;
+            }
+        }
+
+        async function saveSessionContext(opts = {}) {
+            if (!sessionId) return;
+            try {
+                const res = await fetch(`${API_URL}/chat/session/${sessionId}/context`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        selected_paper_id: selectedPaperId,
+                        paper_ids: currentPaperIds,
+                    }),
+                });
+
+                if (res.ok) {
+                    // After saving, reload the full session from the
+                    // backend so the sidebar and local state always
+                    // reflect the canonical session context (paper_ids
+                    // and selected_paper_id).
+                    const shouldReload = opts.reload !== false;
+                    if (shouldReload && !isStreaming) {
+                        await loadSession(sessionId);
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to save session context', err);
+            }
+        }
+
+        async function updateTokenStats() {
+            // Token stats are shown in the sidebar, so refresh the list to update them
+            if (sessionId) {
+                await loadSessionsList();
+            }
+        }
+
+        // Auto-resume a previous session on page load; if none exists,
+        // create a new empty session just like a first-time launch.
+        window.addEventListener('load', async () => {
+            try {
+                // Load sessions list on page load
+                await loadSessionsList();
+                
+                const lastId = window.sessionStorage.getItem(LAST_SESSION_KEY);
+                if (lastId) {
+                    const res = await fetch(`${API_URL}/chat/session/${lastId}`);
+                    if (res.ok) {
+                        await loadSession(lastId);
+                        // updateActiveSessionLabel is handled by loadSession
+                        return;
+                    }
+                    // Session no longer exists; clear stored id
+                    window.sessionStorage.removeItem(LAST_SESSION_KEY);
+                }
+
+                // No valid previous session: create a brand new session
+                // so the behavior matches a fresh app launch.
+                const createRes = await fetch(`${API_URL}/chat/session`, {
+                    method: 'POST',
+                });
+                if (!createRes.ok) {
+                    console.warn('Failed to create initial session');
+                    updateActiveSessionLabel(null, null);
+                    return;
+                }
+                const created = await createRes.json();
+                sessionId = created.session_id;
+                updateActiveSessionLabel(null, sessionId);
+                try {
+                    window.sessionStorage.setItem(LAST_SESSION_KEY, sessionId);
+                } catch (e) {
+                    console.warn('Could not persist last session id', e);
+                }
+                // Persist empty paper context and sync UI from backend
+                await saveSessionContext();
+                // Refresh sessions list after creating new session
+                await loadSessionsList();
+            } catch (e) {
+                console.warn('Failed to initialize session on load', e);
+            }
+        });
+
+        async function duplicateSession() {
+            if (!sessionId) {
+                alert("No active session to duplicate.");
+                return;
+            }
+            
+            try {
+                const res = await fetch(`${API_URL}/chat/session/${sessionId}/duplicate`, {
+                    method: 'POST'
+                });
+                
+                if (res.ok) {
+                    const data = await res.json();
+                    // Switch to the new session
+                    await switchToSession(data.session_id);
+                } else {
+                    alert("Failed to duplicate session");
+                }
+            } catch (e) {
+                console.error("Error duplicating session", e);
+                alert("Error duplicating session");
+            }
+        }
+
+        function initProgressStream() {
+            const evtSource = new EventSource(`${API_URL}/progress`);
+            const container = document.getElementById('progressContainer');
+            const bar = document.getElementById('progressBar');
+            const status = document.getElementById('progressStatus');
+            const percent = document.getElementById('progressPercent');
+
+            evtSource.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    
+                    if (data.status === 'processing') {
+                        container.style.display = 'block';
+                        const pct = Math.round(data.progress || 0);
+                        bar.style.width = `${pct}%`;
+                        status.textContent = data.message || 'Processing...';
+                        percent.textContent = `${pct}%`;
+                    } else if (data.status === 'completed') {
+                        bar.style.width = '100%';
+                        percent.textContent = '100%';
+                        status.textContent = 'Done!';
+                        
+                        // Refresh papers list if we just finished indexing
+                        if (sessionId) {
+                            loadSession(sessionId);
+                        } else {
+                            loadPapers();
+                        }
+
+                        setTimeout(() => {
+                            container.style.display = 'none';
+                            bar.style.width = '0%';
+                        }, 3000);
+                    } else if (data.status === 'error') {
+                        status.textContent = 'Error: ' + (data.message || 'Unknown error');
+                        status.style.color = '#b00020';
+                        setTimeout(() => {
+                            container.style.display = 'none';
+                            status.style.color = '';
+                        }, 5000);
+                    }
+                } catch (e) {
+                    console.error('Error parsing progress event', e);
+                }
+            };
+            
+            evtSource.onerror = function(err) {
+                // EventSource will try to reconnect automatically
+                // We can just log it for debugging
+                // console.debug("Progress stream connection lost, reconnecting...", err);
+            };
+        }
+
+        // Initialize progress stream
+        initProgressStream();
+
+        async function deleteMessage(messageId, element) {
+            if (!confirm('Delete this message?')) return;
+            
+            try {
+                const res = await fetch(`${API_URL}/chat/message/${messageId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (res.ok) {
+                    element.remove();
+                    // If no messages left, show empty state
+                    const chatContainer = document.getElementById('chatContainer');
+                    if (chatContainer.children.length === 0) {
+                         chatContainer.innerHTML = '<div class="empty-state">Ask a question about the papers</div>';
+                    }
+                    // Update token stats as deleting a message changes the context size
+                    await updateTokenStats();
+                } else {
+                    alert('Failed to delete message');
+                }
+            } catch (e) {
+                console.error('Error deleting message', e);
+                alert('Error deleting message');
+            }
+        }
+
+        function openNotes() {
+            if (!sessionId) {
+                alert('Please create or select a session first.');
+                return;
+            }
+            const modal = document.getElementById('notesModal');
+            const textarea = document.getElementById('sessionNotes');
+            textarea.value = currentNotes || '';
+            modal.style.display = 'flex';
+            textarea.focus();
+        }
+
+        function closeNotes() {
+            document.getElementById('notesModal').style.display = 'none';
+        }
+
+        async function saveNotes() {
+            if (!sessionId) return;
+            
+            const textarea = document.getElementById('sessionNotes');
+            const newNotes = textarea.value;
+            const btn = document.querySelector('#notesModal .index-button:not(.secondary)');
+            const originalText = btn.textContent;
+            
+            btn.textContent = 'Saving...';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch(`${API_URL}/chat/session/${sessionId}/notes`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ notes: newNotes }),
+                });
+
+                if (res.ok) {
+                    currentNotes = newNotes;
+                    btn.textContent = 'Saved!';
+                    setTimeout(() => {
+                        btn.textContent = originalText;
+                        btn.disabled = false;
+                        closeNotes();
+                    }, 1000);
+                } else {
+                    throw new Error('Failed to save notes');
+                }
+            } catch (e) {
+                console.error('Error saving notes', e);
+                btn.textContent = 'Error';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.disabled = false;
+                }, 2000);
             }
         }
     </script>
