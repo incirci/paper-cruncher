@@ -37,15 +37,15 @@ async def get_mindmap_data(
         # Generate a paper-specific mindmap directly from that paper's
         # summary, using its canonical title as the root node. The
         # optional custom query can further shape the structure.
-        graph = app_state.mindmap_service.generate_paper_tree(paper_id, custom_query=query)
+        graph = await app_state.mindmap_service.generate_paper_tree(paper_id, custom_query=query)
     elif session_paper_ids is not None:
         # Scope the mindmap to the papers attached to the given session.
         # Pass session_id so per-session disk cache can be reused.
-        graph = app_state.mindmap_service.generate_graph(custom_query=query, paper_ids=session_paper_ids, session_id=session_id)
+        graph = await app_state.mindmap_service.generate_graph(custom_query=query, paper_ids=session_paper_ids, session_id=session_id)
     else:
         # For global mindmaps (with or without a custom query), use the
         # generation pipeline across all papers.
-        graph = app_state.mindmap_service.generate_graph(custom_query=query)
+        graph = await app_state.mindmap_service.generate_graph(custom_query=query)
     
     return graph
 
@@ -54,7 +54,7 @@ async def get_mindmap_data(
 async def rebuild_mindmap(request: Request):
     """Regenerate the hierarchical knowledge tree from current papers and persist it."""
     app_state = request.app.state.app_state
-    tree = app_state.mindmap_service.rebuild_and_persist()
+    tree = await app_state.mindmap_service.rebuild_and_persist()
     
     # Count nodes recursively
     def count_nodes(node):

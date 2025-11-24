@@ -1,6 +1,7 @@
 """AI Agent service using Google Gemini with RAG pipeline."""
 
 from typing import List, Optional, Iterator, Tuple, AsyncIterator
+import asyncio
 
 import logging
 import google.generativeai as genai
@@ -213,7 +214,7 @@ For DENSITY, use: normal (default, 5 chunks) or high (deep dive, 20 chunks)
         """
         Async Orchestrator Agent: Analyzes query and issues specific commands for information gathering.
         """
-        paper_summaries = self.vector_db.get_paper_summaries()
+        paper_summaries = await asyncio.to_thread(self.vector_db.get_paper_summaries)
         self._enrich_summaries(paper_summaries)
 
         # First, restrict to session-allowed papers if provided
@@ -261,7 +262,7 @@ For DENSITY, use: normal (default, 5 chunks) or high (deep dive, 20 chunks)
         all_chunks = []
         
         # Get map of filename -> paper_id
-        papers = self.vector_db.get_all_papers()
+        papers = await asyncio.to_thread(self.vector_db.get_all_papers)
         filename_to_id = {p['paper_filename']: p['paper_id'] for p in papers}
         
         for cmd in commands:
@@ -290,7 +291,7 @@ For DENSITY, use: normal (default, 5 chunks) or high (deep dive, 20 chunks)
                     if allowed_paper_ids:
                         effective_ids = [pid for pid in effective_ids if pid in allowed_paper_ids]
 
-                summaries = self.vector_db.get_paper_summaries(paper_ids=effective_ids)
+                summaries = await asyncio.to_thread(self.vector_db.get_paper_summaries, paper_ids=effective_ids)
                 found_ids = {s['paper_id'] for s in summaries}
                 
                 for s in summaries:
@@ -456,7 +457,8 @@ For DENSITY, use: normal (default, 5 chunks) or high (deep dive, 20 chunks)
                 chunks_per_paper = 5 if density == 'high' else 3
                 
                 for pid in target_ids:
-                    results = self.vector_db.search(
+                    results = await asyncio.to_thread(
+                        self.vector_db.search,
                         query=f"{focus} {user_query}",
                         n_results=chunks_per_paper,
                         paper_ids=[pid]
@@ -472,7 +474,8 @@ For DENSITY, use: normal (default, 5 chunks) or high (deep dive, 20 chunks)
             n_results = (base_chunks * 4) if density == 'high' else base_chunks
             
             # Execute search
-            results = self.vector_db.search(
+            results = await asyncio.to_thread(
+                self.vector_db.search,
                 query=search_query,
                 n_results=n_results,
                 paper_ids=target_ids if target_ids else allowed_paper_ids
@@ -587,6 +590,14 @@ Answer:'''
         except Exception:
             return len(text) // 4
 
+    async def count_tokens_async(self, text: str) -> int:
+        """Count tokens in text using the model asynchronously."""
+        try:
+            resp = await self.model.count_tokens_async(text)
+            return resp.total_tokens
+        except Exception:
+            return len(text) // 4
+
     # --- Imagen integration helpers ---
     def is_visualization_request(self, query: str) -> bool:
         """Heuristic to detect if the user asks for a visual/plot/diagram/image."""
@@ -597,7 +608,7 @@ Answer:'''
         ]
         return any(k in q for k in keywords)
 
-    def _build_image_prompt(
+    async def _build_image_prompt(
         self,
         query: str,
         conversation_history: List[Message],
@@ -607,12 +618,12 @@ Answer:'''
     ) -> Tuple[str, List[str]]:
         """Build an Imagen prompt, leveraging RAG context to guide the visual content."""
         # Reuse orchestrator-worker to gather key chunks, respecting session paper scope
-        orchestration, _, _ = self._orchestrate_retrieval(
+        orchestration, _, _ = await self._orchestrate_retrieval_async(
             query,
             paper_id=paper_id,
             allowed_paper_ids=allowed_paper_ids,
         )
-        relevant_chunks = self._execute_worker_commands(
+        relevant_chunks = await self._execute_worker_commands(
             orchestration["commands"],
             allowed_paper_ids=allowed_paper_ids,
             user_query=query,
@@ -641,7 +652,7 @@ Answer:'''
         )
         return prompt, source_papers
 
-    def generate_image_bytes(
+    async def generate_image_bytes(
         self,
         prompt: str,
         mime_type: str,
@@ -663,7 +674,7 @@ Answer:'''
         full_prompt = f"{prompt}\n\n{size_hint}"
 
         try:
-            response = model.generate_content(full_prompt)
+            response = await model.generate_content_async(full_prompt)
         except Exception as e:  # noqa: BLE001
             raise RuntimeError(f"Imagen content generation failed: {e}")
 
@@ -820,8 +831,8 @@ Formatting Guidelines:
                 yield chunk_text, None
 
         # Estimate token usage using count_tokens
-        prompt_tokens = self.count_tokens(prompt)
-        response_tokens = self.count_tokens(full_text)
+        prompt_tokens = await self.count_tokens_async(prompt)
+        response_tokens = await self.count_tokens_async(full_text)
         
         # Combine with pre-usage (orchestrator tokens)
         total_prompt = prompt_tokens + pre_prompt_tokens
@@ -859,12 +870,12 @@ Formatting Guidelines:
         )
 
         # Generate response
-        response = self.model.generate_content(prompt)
+        response = await self.model.generate_content_async(prompt)
         response_text = self._extract_text_from_response(response)
 
         # Calculate total usage
-        gen_prompt_tokens = self.count_tokens(prompt)
-        gen_response_tokens = self.count_tokens(response_text)
+        gen_prompt_tokens = await self.count_tokens_async(prompt)
+        gen_response_tokens = await self.count_tokens_async(response_text)
         
         total_prompt = prompt_tokens + gen_prompt_tokens
         total_response = response_tokens + gen_response_tokens

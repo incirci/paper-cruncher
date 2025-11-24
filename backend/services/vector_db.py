@@ -1,5 +1,6 @@
 """Vector database service for semantic search using ChromaDB."""
 
+import threading
 from pathlib import Path
 from typing import List, Optional
 
@@ -21,6 +22,7 @@ class VectorDBService:
         """
         self.db_path = db_path
         self.db_path.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
 
         # Initialize ChromaDB with persistent storage
         self.client = chromadb.PersistentClient(
@@ -60,7 +62,8 @@ class VectorDBService:
         ]
 
         # Add to collection (ChromaDB handles embedding automatically)
-        self.collection.add(ids=ids, documents=documents, metadatas=metadatas)
+        with self._lock:
+            self.collection.add(ids=ids, documents=documents, metadatas=metadatas)
 
     def search(
         self,
@@ -116,10 +119,14 @@ class VectorDBService:
             paper_id: ID of the paper to delete
         """
         # Get all chunk IDs for this paper
-        results = self.collection.get(where={"paper_id": paper_id})
+        # Note: .get() is a read op, but we want to ensure we don't delete while someone else is reading/writing if possible,
+        # though Chroma handles readers. The critical part is the delete.
+        # We'll lock the whole operation to be safe and consistent.
+        with self._lock:
+            results = self.collection.get(where={"paper_id": paper_id})
 
-        if results["ids"]:
-            self.collection.delete(ids=results["ids"])
+            if results["ids"]:
+                self.collection.delete(ids=results["ids"])
 
     def get_paper_chunks(self, paper_id: str) -> List[dict]:
         """
@@ -373,8 +380,9 @@ class VectorDBService:
 
     def reset(self):
         """Clear all data from the collection."""
-        self.client.delete_collection(name="paper_chunks")
-        self.collection = self.client.get_or_create_collection(
-            name="paper_chunks",
-            metadata={"description": "Chunks from journal articles"},
-        )
+        with self._lock:
+            self.client.delete_collection(name="paper_chunks")
+            self.collection = self.client.get_or_create_collection(
+                name="paper_chunks",
+                metadata={"description": "Chunks from journal articles"},
+            )

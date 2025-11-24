@@ -1,5 +1,6 @@
 """Paper management service for indexing and managing papers."""
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -67,7 +68,8 @@ class PaperManager:
     async def _index_paper(self, pdf_path: Path, original_filename: str | None = None):
         """Index a single paper."""
         # Process paper
-        metadata, chunks = self.pdf_processor.process_paper(
+        metadata, chunks = await asyncio.to_thread(
+            self.pdf_processor.process_paper,
             pdf_path,
             chunk_size=settings.chunking.chunk_size,
             chunk_overlap=settings.chunking.chunk_overlap,
@@ -124,7 +126,7 @@ class PaperManager:
                 print(f"Error fetching OpenAlex metadata for {metadata.filename}: {e}")
 
         # Add to vector database
-        self.vector_db.add_paper_chunks(chunks, metadata)
+        await asyncio.to_thread(self.vector_db.add_paper_chunks, chunks, metadata)
 
         # Store metadata
         self.papers[metadata.id] = metadata
@@ -173,7 +175,7 @@ class PaperManager:
                 return meta
 
         # Fallback: extract fresh metadata (does not re-index)
-        return self.pdf_processor.extract_metadata(pdf_path)
+        return await asyncio.to_thread(self.pdf_processor.extract_metadata, pdf_path)
 
     def remove_paper(self, paper_id: str):
         """

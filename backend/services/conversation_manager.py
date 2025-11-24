@@ -2,6 +2,7 @@
 
 import json
 import sqlite3
+import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -22,6 +23,7 @@ class ConversationManager:
         """
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
 
         # Initialize database
         self._init_db()
@@ -35,47 +37,49 @@ class ConversationManager:
         # Ensure schema exists (in case the file was deleted by rmtree)
         self._init_db()
 
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM messages")
-            cursor.execute("DELETE FROM conversations")
-            conn.commit()
+        with self._lock:
+            with sqlite3.connect(self.db_path, timeout=30.0) as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM messages")
+                cursor.execute("DELETE FROM conversations")
+                conn.commit()
 
     def _init_db(self):
         """Initialize database schema."""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
+        with self._lock:
+            with sqlite3.connect(self.db_path, timeout=30.0) as conn:
+                cursor = conn.cursor()
 
-            # Conversations table with session_name
-            cursor.execute(
-                """
-                CREATE TABLE IF NOT EXISTS conversations (
-                    session_id TEXT PRIMARY KEY,
-                    session_name TEXT,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    total_tokens INTEGER DEFAULT 0,
-                    selected_paper_id TEXT,
-                    paper_ids TEXT
+                # Conversations table with session_name
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS conversations (
+                        session_id TEXT PRIMARY KEY,
+                        session_name TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        total_tokens INTEGER DEFAULT 0,
+                        selected_paper_id TEXT,
+                        paper_ids TEXT
+                    )
+                    """
                 )
-                """
-            )
 
-            # Messages table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS messages (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    session_id TEXT NOT NULL,
-                    role TEXT NOT NULL,
-                    content TEXT NOT NULL,
-                    timestamp TEXT NOT NULL,
-                    token_count INTEGER,
-                    source_papers TEXT,
-                    FOREIGN KEY (session_id) REFERENCES conversations (session_id)
-                )
-            """)
+                # Messages table
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS messages (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        session_id TEXT NOT NULL,
+                        role TEXT NOT NULL,
+                        content TEXT NOT NULL,
+                        timestamp TEXT NOT NULL,
+                        token_count INTEGER,
+                        source_papers TEXT,
+                        FOREIGN KEY (session_id) REFERENCES conversations (session_id)
+                    )
+                """)
 
-            conn.commit()
+                conn.commit()
 
     def create_session(
         self,
@@ -94,16 +98,17 @@ class ConversationManager:
         now = datetime.now().isoformat()
         paper_ids_json = json.dumps(paper_ids or [])
 
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                INSERT INTO conversations (session_id, session_name, created_at, updated_at, total_tokens, selected_paper_id, paper_ids)
-                VALUES (?, ?, ?, ?, 0, ?, ?)
-            """,
-                (session_id, session_name, now, now, selected_paper_id, paper_ids_json),
-            )
-            conn.commit()
+        with self._lock:
+            with sqlite3.connect(self.db_path, timeout=30.0) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    INSERT INTO conversations (session_id, session_name, created_at, updated_at, total_tokens, selected_paper_id, paper_ids)
+                    VALUES (?, ?, ?, ?, 0, ?, ?)
+                """,
+                    (session_id, session_name, now, now, selected_paper_id, paper_ids_json),
+                )
+                conn.commit()
 
         return session_id
 
@@ -131,37 +136,38 @@ class ConversationManager:
         timestamp = datetime.now()
         source_papers_json = json.dumps(source_papers or [])
 
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
+        with self._lock:
+            with sqlite3.connect(self.db_path, timeout=30.0) as conn:
+                cursor = conn.cursor()
 
-            # Insert message
-            cursor.execute(
-                """
-                INSERT INTO messages (session_id, role, content, timestamp, token_count, source_papers)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """,
-                (
-                    session_id,
-                    role.value,
-                    content,
-                    timestamp.isoformat(),
-                    token_count,
-                    source_papers_json,
-                ),
-            )
+                # Insert message
+                cursor.execute(
+                    """
+                    INSERT INTO messages (session_id, role, content, timestamp, token_count, source_papers)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                    (
+                        session_id,
+                        role.value,
+                        content,
+                        timestamp.isoformat(),
+                        token_count,
+                        source_papers_json,
+                    ),
+                )
 
-            # Update conversation
-            cursor.execute(
-                """
-                UPDATE conversations
-                SET updated_at = ?,
-                    total_tokens = total_tokens + ?
-                WHERE session_id = ?
-            """,
-                (timestamp.isoformat(), token_count or 0, session_id),
-            )
+                # Update conversation
+                cursor.execute(
+                    """
+                    UPDATE conversations
+                    SET updated_at = ?,
+                        total_tokens = total_tokens + ?
+                    WHERE session_id = ?
+                """,
+                    (timestamp.isoformat(), token_count or 0, session_id),
+                )
 
-            conn.commit()
+                conn.commit()
 
         return Message(
             role=role,
@@ -181,63 +187,68 @@ class ConversationManager:
         Returns:
             Conversation object or None if not found
         """
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
+        # Reads are generally safe without lock in WAL mode or with short writes,
+        # but using the lock ensures we don't read while a write is partially happening (though SQLite transactions handle that).
+        # To be safe and simple, we can lock reads too, or just rely on SQLite.
+        # Given the low volume, locking reads is fine and guarantees no "database locked" on connect.
+        with self._lock:
+            with sqlite3.connect(self.db_path, timeout=30.0) as conn:
+                cursor = conn.cursor()
 
-            # Get conversation
-            cursor.execute(
-                """
-                SELECT session_id, session_name, created_at, updated_at, total_tokens, selected_paper_id, paper_ids
-                FROM conversations
-                WHERE session_id = ?
-            """,
-                (session_id,),
-            )
-
-            conv_row = cursor.fetchone()
-            if not conv_row:
-                return None
-
-            # Get messages
-            cursor.execute(
-                """
-                SELECT role, content, timestamp, token_count, source_papers
-                FROM messages
-                WHERE session_id = ?
-                ORDER BY timestamp ASC
-            """,
-                (session_id,),
-            )
-
-            messages = []
-            for row in cursor.fetchall():
-                messages.append(
-                    Message(
-                        role=MessageRole(row[0]),
-                        content=row[1],
-                        timestamp=datetime.fromisoformat(row[2]),
-                        token_count=row[3],
-                        source_papers=json.loads(row[4]),
-                    )
+                # Get conversation
+                cursor.execute(
+                    """
+                    SELECT session_id, session_name, created_at, updated_at, total_tokens, selected_paper_id, paper_ids
+                    FROM conversations
+                    WHERE session_id = ?
+                """,
+                    (session_id,),
                 )
 
-            paper_ids: list[str] = []
-            if conv_row[6]:
-                try:
-                    paper_ids = json.loads(conv_row[6])
-                except Exception:
-                    paper_ids = []
+                conv_row = cursor.fetchone()
+                if not conv_row:
+                    return None
 
-            return Conversation(
-                session_id=conv_row[0],
-                session_name=conv_row[1],
-                created_at=datetime.fromisoformat(conv_row[2]),
-                updated_at=datetime.fromisoformat(conv_row[3]),
-                total_tokens=conv_row[4],
-                messages=messages,
-                selected_paper_id=conv_row[5],
-                paper_ids=paper_ids,
-            )
+                # Get messages
+                cursor.execute(
+                    """
+                    SELECT role, content, timestamp, token_count, source_papers
+                    FROM messages
+                    WHERE session_id = ?
+                    ORDER BY timestamp ASC
+                """,
+                    (session_id,),
+                )
+
+                messages = []
+                for row in cursor.fetchall():
+                    messages.append(
+                        Message(
+                            role=MessageRole(row[0]),
+                            content=row[1],
+                            timestamp=datetime.fromisoformat(row[2]),
+                            token_count=row[3],
+                            source_papers=json.loads(row[4]),
+                        )
+                    )
+
+                paper_ids: list[str] = []
+                if conv_row[6]:
+                    try:
+                        paper_ids = json.loads(conv_row[6])
+                    except Exception:
+                        paper_ids = []
+
+                return Conversation(
+                    session_id=conv_row[0],
+                    session_name=conv_row[1],
+                    created_at=datetime.fromisoformat(conv_row[2]),
+                    updated_at=datetime.fromisoformat(conv_row[3]),
+                    total_tokens=conv_row[4],
+                    messages=messages,
+                    selected_paper_id=conv_row[5],
+                    paper_ids=paper_ids,
+                )
 
     def get_conversation_history(self, session_id: str) -> List[Message]:
         """Get conversation history (messages only)."""
@@ -252,62 +263,65 @@ class ConversationManager:
         we want to keep the session metadata intact.
         """
         now = datetime.now().isoformat()
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
-            cursor.execute(
-                """
-                UPDATE conversations
-                SET updated_at = ?, total_tokens = 0
-                WHERE session_id = ?
-                """,
-                (now, session_id),
-            )
-            conn.commit()
+        with self._lock:
+            with sqlite3.connect(self.db_path, timeout=30.0) as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
+                cursor.execute(
+                    """
+                    UPDATE conversations
+                    SET updated_at = ?, total_tokens = 0
+                    WHERE session_id = ?
+                    """,
+                    (now, session_id),
+                )
+                conn.commit()
 
     def delete_conversation(self, session_id: str):
         """Delete a conversation and all its messages."""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
+        with self._lock:
+            with sqlite3.connect(self.db_path, timeout=30.0) as conn:
+                cursor = conn.cursor()
 
-            cursor.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
-            cursor.execute(
-                "DELETE FROM conversations WHERE session_id = ?", (session_id,)
-            )
+                cursor.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
+                cursor.execute(
+                    "DELETE FROM conversations WHERE session_id = ?", (session_id,)
+                )
 
-            conn.commit()
+                conn.commit()
 
     def list_sessions(self) -> List[dict]:
         """List all conversation sessions with message counts."""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
+        with self._lock:
+            with sqlite3.connect(self.db_path, timeout=30.0) as conn:
+                cursor = conn.cursor()
 
-            cursor.execute("""
-                SELECT c.session_id, c.session_name, c.created_at, c.updated_at, c.total_tokens, 
-                       c.selected_paper_id, c.paper_ids,
-                       COUNT(m.id) as message_count
-                FROM conversations c
-                LEFT JOIN messages m ON c.session_id = m.session_id
-                GROUP BY c.session_id
-                ORDER BY c.updated_at DESC
-            """)
+                cursor.execute("""
+                    SELECT c.session_id, c.session_name, c.created_at, c.updated_at, c.total_tokens, 
+                           c.selected_paper_id, c.paper_ids,
+                           COUNT(m.id) as message_count
+                    FROM conversations c
+                    LEFT JOIN messages m ON c.session_id = m.session_id
+                    GROUP BY c.session_id
+                    ORDER BY c.updated_at DESC
+                """)
 
-            sessions = []
-            for row in cursor.fetchall():
-                sessions.append(
-                    {
-                        "session_id": row[0],
-                        "session_name": row[1],
-                        "created_at": row[2],
-                        "updated_at": row[3],
-                        "total_tokens": row[4],
-                        "selected_paper_id": row[5],
-                        "paper_ids": row[6],
-                        "message_count": row[7],
-                    }
-                )
+                sessions = []
+                for row in cursor.fetchall():
+                    sessions.append(
+                        {
+                            "session_id": row[0],
+                            "session_name": row[1],
+                            "created_at": row[2],
+                            "updated_at": row[3],
+                            "total_tokens": row[4],
+                            "selected_paper_id": row[5],
+                            "paper_ids": row[6],
+                            "message_count": row[7],
+                        }
+                    )
 
-            return sessions
+                return sessions
 
     def update_session_papers(
         self,
@@ -319,19 +333,20 @@ class ConversationManager:
         paper_ids_json = json.dumps(paper_ids or [])
         now = datetime.now().isoformat()
 
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                UPDATE conversations
-                SET selected_paper_id = ?,
-                    paper_ids = ?,
-                    updated_at = ?
-                WHERE session_id = ?
-                """,
-                (selected_paper_id, paper_ids_json, now, session_id),
-            )
-            conn.commit()
+        with self._lock:
+            with sqlite3.connect(self.db_path, timeout=30.0) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    UPDATE conversations
+                    SET selected_paper_id = ?,
+                        paper_ids = ?,
+                        updated_at = ?
+                    WHERE session_id = ?
+                    """,
+                    (selected_paper_id, paper_ids_json, now, session_id),
+                )
+                conn.commit()
 
     def rename_session(self, session_id: str, session_name: str) -> None:
         """Rename a session.
@@ -341,26 +356,28 @@ class ConversationManager:
             session_name: New name for the session
         """
         now = datetime.now().isoformat()
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                UPDATE conversations
-                SET session_name = ?, updated_at = ?
-                WHERE session_id = ?
-                """,
-                (session_name, now, session_id),
-            )
-            conn.commit()
+        with self._lock:
+            with sqlite3.connect(self.db_path, timeout=30.0) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    UPDATE conversations
+                    SET session_name = ?, updated_at = ?
+                    WHERE session_id = ?
+                    """,
+                    (session_name, now, session_id),
+                )
+                conn.commit()
 
     def session_exists(self, session_id: str) -> bool:
         """Check if a session exists."""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT 1 FROM conversations WHERE session_id = ?", (session_id,)
-            )
-            return cursor.fetchone() is not None
+        with self._lock:
+            with sqlite3.connect(self.db_path, timeout=30.0) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT 1 FROM conversations WHERE session_id = ?", (session_id,)
+                )
+                return cursor.fetchone() is not None
 
     def duplicate_session(self, source_session_id: str) -> str:
         """Duplicate a session (papers only, no messages).

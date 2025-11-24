@@ -68,7 +68,7 @@ async def chat(request: Request, chat_request: ChatRequest):
 
     # Visualization branch
     if request.app.state.settings.image.enabled and app_state.ai_agent.is_visualization_request(chat_request.message):
-        prompt, source_papers = app_state.ai_agent._build_image_prompt(
+        prompt, source_papers = await app_state.ai_agent._build_image_prompt(
             query=chat_request.message,
             conversation_history=history[:-1],
             paper_id=getattr(chat_request, "paper_id", None),
@@ -78,7 +78,7 @@ async def chat(request: Request, chat_request: ChatRequest):
         width = request.app.state.settings.image.width
         height = request.app.state.settings.image.height
         try:
-            mime_type, b64 = app_state.ai_agent.generate_image_bytes(
+            mime_type, b64 = await app_state.ai_agent.generate_image_bytes(
                 prompt=prompt,
                 mime_type=mime,
                 width=width,
@@ -219,7 +219,7 @@ async def chat_stream(
 
             # If visualization requested and enabled, stream an image event first
             if request.app.state.settings.image.enabled and app_state.ai_agent.is_visualization_request(message):
-                prompt_img, source_papers = app_state.ai_agent._build_image_prompt(
+                prompt_img, source_papers = await app_state.ai_agent._build_image_prompt(
                     query=message,
                     conversation_history=history[:-1],
                     paper_id=paper_id,
@@ -229,7 +229,7 @@ async def chat_stream(
                 width = request.app.state.settings.image.width
                 height = request.app.state.settings.image.height
                 try:
-                    mime_type, b64 = app_state.ai_agent.generate_image_bytes(
+                    mime_type, b64 = await app_state.ai_agent.generate_image_bytes(
                         prompt=prompt_img,
                         mime_type=mime,
                         width=width,
@@ -382,7 +382,7 @@ async def chat_stream_get(
         try:
             # Visualization branch (Imagen) for EventSource
             if request.app.state.settings.image.enabled and app_state.ai_agent.is_visualization_request(message):
-                prompt_img, source_papers = app_state.ai_agent._build_image_prompt(
+                prompt_img, source_papers = await app_state.ai_agent._build_image_prompt(
                     query=message,
                     conversation_history=history[:-1],
                     paper_id=paper_id,
@@ -392,7 +392,7 @@ async def chat_stream_get(
                 width = request.app.state.settings.image.width
                 height = request.app.state.settings.image.height
                 try:
-                    mime_type, b64 = app_state.ai_agent.generate_image_bytes(
+                    mime_type, b64 = await app_state.ai_agent.generate_image_bytes(
                         prompt=prompt_img,
                         mime_type=mime,
                         width=width,

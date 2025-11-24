@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import hashlib
+import asyncio
 
 import google.generativeai as genai
 
@@ -229,9 +230,9 @@ class MindmapService:
         data.setdefault("children", [])
         return data
 
-    def _summaries(self, paper_ids: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    async def _summaries(self, paper_ids: Optional[List[str]] = None) -> List[Dict[str, Any]]:
         try:
-            summaries = self.vector_db.get_paper_summaries()
+            summaries = await asyncio.to_thread(self.vector_db.get_paper_summaries)
             if paper_ids:
                 allowed = set(paper_ids)
                 summaries = [s for s in summaries if s.get("paper_id") in allowed]
@@ -239,13 +240,13 @@ class MindmapService:
         except Exception:
             return []
 
-    def _current_paper_fingerprint(self, paper_ids: Optional[List[str]] = None) -> str:
+    async def _current_paper_fingerprint(self, paper_ids: Optional[List[str]] = None) -> str:
         """Compute a stable fingerprint for the current set of papers.
 
         This is used to scope cached mindmaps to a specific paper set so
         that adding/removing papers automatically invalidates older graphs.
         """
-        summaries = self._summaries(paper_ids=paper_ids)
+        summaries = await self._summaries(paper_ids=paper_ids)
         ids = sorted(s.get("paper_id") for s in summaries if s.get("paper_id"))
         return "|".join(ids)
 
@@ -278,7 +279,7 @@ class MindmapService:
         except Exception:
             pass
 
-    def generate_graph(self, custom_query: Optional[str] = None, paper_ids: Optional[List[str]] = None, session_id: Optional[str] = None) -> Dict[str, Any]:
+    async def generate_graph(self, custom_query: Optional[str] = None, paper_ids: Optional[List[str]] = None, session_id: Optional[str] = None) -> Dict[str, Any]:
         """Generate a hierarchical knowledge tree from current papers using the LLM.
 
         If custom_query is provided, the generated tree is influenced by the
@@ -288,11 +289,11 @@ class MindmapService:
         so that subsequent requests reuse existing graphs when the query and
         paper set have not changed.
         """
-        summaries = self._summaries(paper_ids=paper_ids)
+        summaries = await self._summaries(paper_ids=paper_ids)
         if not summaries:
             return {"name": "Research Topics", "children": []}
         # Build a fingerprint for the current paper set to scope caching.
-        fingerprint = self._current_paper_fingerprint(paper_ids=paper_ids)
+        fingerprint = await self._current_paper_fingerprint(paper_ids=paper_ids)
         query_key = self._query_key(custom_query)
 
         # Reuse cache when possible for both global and session-scoped graphs.
@@ -323,7 +324,7 @@ class MindmapService:
             meta = index.get(cache_key)
             if meta and not query_key and self.graph_file.exists():
                 try:
-                    tree = self.load_graph()
+                    tree = await asyncio.to_thread(self.load_graph)
                     self._graph_cache[cache_key] = tree
                     return tree
                 except Exception:
@@ -335,7 +336,8 @@ class MindmapService:
         if custom_query:
             # Perform RAG search to enrich the context
             # We increase n_results to get a good spread of information
-            search_results = self.vector_db.search(
+            search_results = await asyncio.to_thread(
+                self.vector_db.search,
                 query=custom_query, 
                 n_results=getattr(settings.mindmap, "rag_context_chunks", 40),
                 paper_ids=paper_ids
@@ -361,7 +363,7 @@ class MindmapService:
                 rag_context = "\n".join(context_parts)
 
         prompt = self.build_prompt(summaries, custom_query=custom_query, rag_context=rag_context)
-        response = self.model.generate_content(prompt)
+        response = await self.model.generate_content_async(prompt)
         tree = self._safe_parse_json(self._extract_text(response))
 
         # Post-process the tree to normalize and de-duplicate internal concepts
@@ -370,7 +372,7 @@ class MindmapService:
         # Persist as graph.json and update index only for true global graphs
         if not paper_ids:
             if not query_key:
-                self.save_graph(tree)
+                await asyncio.to_thread(self.save_graph, tree)
 
             # Update on-disk index for query → metadata mapping
             index = self._load_index()
@@ -395,14 +397,14 @@ class MindmapService:
 
         return tree
     
-    def generate_paper_tree(self, paper_id: str, custom_query: Optional[str] = None) -> Dict[str, Any]:
+    async def generate_paper_tree(self, paper_id: str, custom_query: Optional[str] = None) -> Dict[str, Any]:
         """Generate a mindmap focused on a single paper.
 
         Instead of slicing the global tree, this builds a dedicated
         hierarchy for the selected paper using only its summary, with
         the paper's canonical title as the root node.
         """
-        summaries = self._summaries()
+        summaries = await self._summaries()
         paper_summary: Optional[Dict[str, Any]] = None
         for s in summaries:
             if s.get("paper_id") == paper_id:
@@ -422,7 +424,8 @@ class MindmapService:
         rag_context = None
         if custom_query:
             # Perform RAG search to enrich the context for this single paper
-            search_results = self.vector_db.search(
+            search_results = await asyncio.to_thread(
+                self.vector_db.search,
                 query=custom_query, 
                 n_results=getattr(settings.mindmap, "rag_context_chunks", 20), # Fewer chunks for single paper
                 paper_ids=[paper_id]
@@ -436,7 +439,7 @@ class MindmapService:
                 rag_context = "\n".join(context_parts)
 
         prompt = self.build_single_paper_prompt(paper_summary, custom_query=custom_query, rag_context=rag_context)
-        response = self.model.generate_content(prompt)
+        response = await self.model.generate_content_async(prompt)
         tree = self._safe_parse_json(self._extract_text(response))
 
         # Normalize/deduplicate concept nodes for consistency
@@ -459,9 +462,9 @@ class MindmapService:
         with open(self.graph_file, "r", encoding="utf-8") as f:
             return json.load(f)
 
-    def rebuild_and_persist(self) -> Dict[str, Any]:
-        tree = self.generate_graph()
-        self.save_graph(tree)
+    async def rebuild_and_persist(self) -> Dict[str, Any]:
+        tree = await self.generate_graph()
+        await asyncio.to_thread(self.save_graph, tree)
         return tree
 
     # ------------------------------------------------------------------
