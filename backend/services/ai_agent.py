@@ -118,7 +118,7 @@ Valid actions:
 6. fetch_cited_by: Use when asked to list papers that cite a paper. (e.g. "Who cited paper X?", "List papers citing Y"). Ignores FOCUS.
 
 For PAPERS, use: ALL or specific Filenames (e.g. paper.pdf) separated by commas. Do NOT use titles in the PAPERS field, only the Filenames listed above.
-For DENSITY, use: normal (default, 5 chunks) or high (deep dive, 20 chunks). ALWAYS use 'high' for tables, comparisons, or technical extraction requests.
+For DENSITY, use: normal (default, 5 chunks) or high (deep dive, 20 chunks). ALWAYS use 'high' for tables, comparisons, technical extraction, methodology, datasets, or specific fact-checking requests.
 '''
 
     def _parse_orchestration_response(self, response_text: str, paper_summaries: List[dict]) -> dict:
@@ -735,7 +735,8 @@ Your role:
 
 Fact Verification & Tables:
 - When creating tables or extracting technical details (e.g., sensors, accuracy, participants):
-  - You must find EXPLICIT evidence in the text.
+  - Look for EXPLICIT evidence or strong contextual indicators in the text.
+  - Be aware of synonyms (e.g., "subjective measures" might be the "ground truth" label).
   - If a paper mentions a sensor in the Introduction as "related work" but does not use it, DO NOT list it as the paper's sensor.
   - If the text does not explicitly state the detail, write "Not Specified" or "N/A". Do not guess.
   - Verify that the detail belongs to the correct paper (check the filename/title in the context).
