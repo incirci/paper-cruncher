@@ -235,6 +235,10 @@ The app will be available at `http://localhost:8000`.
 ### Features
 
 - **Modern Chat Interface**: ChatGPT-style UI with floating input, auto-expanding text area, and state-aware blocking.
+- **Professional UI/UX**:
+  - **Science Blue Theme**: Unified color palette (#1a73e8) for a clean, academic aesthetic.
+  - **Paper-like Texture**: Subtle SVG noise background for reduced eye strain and organic feel.
+  - **Unified Design System**: Consistent button styles and visual hierarchy across all views.
 - **Session Management**: Independent chat sessions with dedicated sidebar
   - View all sessions with metadata (messages, tokens, timestamps)
   - Switch between sessions seamlessly

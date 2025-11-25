@@ -79,6 +79,19 @@ cruncher/
    - Text chunking helpers
    - Misc helper functions
 
+### Frontend Architecture
+
+The frontend is a single-file application (`index.html`) designed for simplicity and performance, but built with a robust design system:
+
+1. **Unified Design System**:
+   - **Color Palette**: "Science Blue" (`#1a73e8`) for primary actions and "Cool Grays" for UI chrome, ensuring high contrast and professional appearance.
+   - **Component Library**: Standardized CSS classes (`.btn`, `.btn-primary`, `.btn-secondary`, `.modal-content`) replace ad-hoc styling.
+   - **Visual Texture**: A global SVG noise filter (`<feTurbulence>`) is applied via CSS `background-image` to create a subtle, paper-like grain, reducing the "flatness" of standard web UIs.
+
+2. **State Management**:
+   - **Server-Driven UI**: The frontend state is a reflection of the backend. Actions (like selecting a paper) trigger API calls, and the UI updates based on the response or SSE events.
+   - **Real-time Updates**: `EventSource` connects to `/api/progress` to stream upload status and processing events directly to the UI.
+
 ### Data Flow
 
 ```text
