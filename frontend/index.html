@@ -1583,7 +1583,19 @@
                 // 4. Robustly fix Mermaid node labels
                 // Strategy: Protect valid quoted labels, then quote any unquoted labels containing special chars.
                 
+                // Fix unquoted subgraph titles FIRST
+                processed = processed.replace(/^(\s*)subgraph\s+([^"\[\r\n]+)(?:\r?\n|$)/gm, (match, indent, content) => {
+                    const trimmed = content.trim();
+                    return `${indent}subgraph "${trimmed}"\n`;
+                });
+
                 const placeholders = [];
+
+                // Protect subgraph titles
+                processed = processed.replace(/^(\s*subgraph\s+)"((?:[^"\\]|\\.)*)"/gm, (match) => {
+                    placeholders.push(match);
+                    return `@@MERMAID_PH_${placeholders.length - 1}@@`;
+                });
                 
                 // Helper to protect already quoted strings inside delimiters
                 // Matches: delimiter "..." delimiter
@@ -1610,12 +1622,6 @@
                     }
                     return `${start}${content}${end}`;
                 };
-
-                // Fix unquoted subgraph titles
-                processed = processed.replace(/^(\s*)subgraph\s+([^"\[\r\n]+)(?:\r?\n|$)/gm, (match, indent, content) => {
-                    const trimmed = content.trim();
-                    return `${indent}subgraph "${trimmed}"\n`;
-                });
 
                 // Combined regex for all node shapes to avoid double-processing nested content
                 // Order matters: specific delimiters must come before generic ones (e.g. [( before [)
@@ -1816,6 +1822,7 @@
                 const es = new EventSource(sseUrl);
                 let fullText = '';
                 isStreaming = true;
+                let lastRender = 0;
 
                 es.onmessage = async (evt) => {
                     try {
@@ -1864,18 +1871,31 @@
                         }
                         if (data.type === 'chunk') {
                             fullText += data.text;
+                            const now = Date.now();
+                            // Throttle rendering to avoid freezing UI on large/complex responses
+                            if (now - lastRender > 100) {
+                                if (typeof marked !== 'undefined') {
+                                    contentDiv.innerHTML = renderMarkdownWithMath(fullText);
+                                    attachCodeBlockCopyButtons(contentDiv);
+                                } else {
+                                    contentDiv.textContent = fullText;
+                                }
+                                if (autoScroll) {
+                                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                                }
+                                lastRender = now;
+                            }
+                            return;
+                        }
+                        if (data.type === 'done') {
+                            // Ensure final state is rendered
                             if (typeof marked !== 'undefined') {
                                 contentDiv.innerHTML = renderMarkdownWithMath(fullText);
                                 attachCodeBlockCopyButtons(contentDiv);
                             } else {
                                 contentDiv.textContent = fullText;
                             }
-                            if (autoScroll) {
-                                chatContainer.scrollTop = chatContainer.scrollHeight;
-                            }
-                            return;
-                        }
-                        if (data.type === 'done') {
+
                             const sourcePapers = data.source_papers || [];
                             if (sourcePapers.length > 0) {
                                 const sourcesDiv = document.createElement('div');
@@ -2280,6 +2300,10 @@
                 document.querySelectorAll('.paper-item').forEach(item => {
                     if (selectedPaperId && item.dataset.paperId === selectedPaperId) {
                         item.classList.add('selected');
+                        // Scroll selected paper into view
+                        setTimeout(() => {
+                            item.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }, 50);
                     } else {
                         item.classList.remove('selected');
                     }
