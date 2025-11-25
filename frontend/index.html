@@ -560,6 +560,46 @@
             font-weight: 600;
         }
 
+        /* Interactive Table Styles */
+        .interactive-table th {
+            cursor: pointer;
+            position: relative;
+            user-select: none;
+        }
+        .interactive-table th:hover {
+            background-color: #e9ecef;
+        }
+        .interactive-table th::after {
+            content: '↕';
+            font-size: 10px;
+            margin-left: 5px;
+            opacity: 0.3;
+            float: right;
+            margin-right: 10px;
+        }
+        .interactive-table th.asc::after {
+            content: '↑';
+            opacity: 1;
+        }
+        .interactive-table th.desc::after {
+            content: '↓';
+            opacity: 1;
+        }
+        .resize-handle {
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 5px;
+            cursor: col-resize;
+            background: transparent;
+            z-index: 1;
+        }
+        .resize-handle:hover,
+        .resize-handle.active {
+            background: #007bff;
+        }
+
         .message-sources {
             font-size: 12px;
             margin-top: 8px;
@@ -1384,6 +1424,98 @@
             }
         }
 
+        function makeTablesInteractive(container) {
+            const tables = container.querySelectorAll('table');
+            tables.forEach(table => {
+                if (table.classList.contains('interactive-processed')) return;
+                table.classList.add('interactive-table', 'interactive-processed');
+                
+                // Enable sorting
+                const headers = table.querySelectorAll('th');
+                headers.forEach((th, index) => {
+                    th.addEventListener('click', (e) => {
+                        // Ignore if clicking resize handle
+                        if (e.target.classList.contains('resize-handle')) return;
+                        sortTable(table, index);
+                    });
+                    
+                    // Add resize handle
+                    const handle = document.createElement('div');
+                    handle.className = 'resize-handle';
+                    th.appendChild(handle);
+                    enableResize(table, th, handle);
+                });
+            });
+        }
+
+        function sortTable(table, colIndex) {
+            const tbody = table.querySelector('tbody');
+            if (!tbody) return;
+            
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            const th = table.querySelectorAll('th')[colIndex];
+            const isAsc = !th.classList.contains('asc');
+            
+            // Reset other headers
+            table.querySelectorAll('th').forEach(h => h.classList.remove('asc', 'desc'));
+            th.classList.toggle('asc', isAsc);
+            th.classList.toggle('desc', !isAsc);
+            
+            rows.sort((a, b) => {
+                const cellA = a.cells[colIndex]?.textContent.trim() || '';
+                const cellB = b.cells[colIndex]?.textContent.trim() || '';
+                
+                // Try numeric sort
+                const numA = parseFloat(cellA.replace(/[^0-9.-]+/g, ''));
+                const numB = parseFloat(cellB.replace(/[^0-9.-]+/g, ''));
+                
+                // Check if both are valid numbers and the cell actually looks like a number
+                // (to avoid parsing "Session 1" as just "1" and sorting numerically if it's mixed)
+                const isNumA = !isNaN(numA) && cellA.match(/^[\d.,\s$%]+$/);
+                const isNumB = !isNaN(numB) && cellB.match(/^[\d.,\s$%]+$/);
+
+                if (isNumA && isNumB) {
+                    return isAsc ? numA - numB : numB - numA;
+                }
+                
+                return isAsc ? cellA.localeCompare(cellB) : cellB.localeCompare(cellA);
+            });
+            
+            rows.forEach(row => tbody.appendChild(row));
+        }
+
+        function enableResize(table, th, handle) {
+            let startX, startWidth;
+            
+            handle.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation(); // Prevent sort trigger
+                startX = e.pageX;
+                startWidth = th.offsetWidth;
+                handle.classList.add('active');
+                
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+            });
+            
+            function onMouseMove(e) {
+                const width = startWidth + (e.pageX - startX);
+                if (width > 50) {
+                    th.style.width = `${width}px`;
+                    th.style.minWidth = `${width}px`;
+                    // Force table to respect widths
+                    table.style.tableLayout = 'fixed';
+                    table.style.width = '100%';
+                }
+            }
+            
+            function onMouseUp() {
+                handle.classList.remove('active');
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+            }
+        }
+
         function renderMarkdownWithMath(text) {
             if (typeof marked === 'undefined') return text;
             
@@ -1420,7 +1552,7 @@
             let html = marked.parse(protectedText);
 
             // Wrap tables for horizontal scrolling
-            html = html.replace(/<table>/g, '<div style="overflow-x: auto; margin-bottom: 16px;"><table>').replace(/<\/table>/g, '</table></div>');
+            html = html.replace(/<table>/g, '<div style="overflow-x: auto; margin-bottom: 16px;"><table class="interactive-table">').replace(/<\/table>/g, '</table></div>');
 
             // Fix: Restore raw TeX inside Mermaid blocks BEFORE rendering KaTeX
             // This prevents KaTeX HTML from breaking Mermaid diagrams
@@ -1757,6 +1889,7 @@
 
                             // Render mermaid diagrams in the final message
                             await runMermaid(contentDiv);
+                            makeTablesInteractive(contentDiv);
 
                             // Ensure latest paper context is persisted with the session
                             await saveSessionContext({ reload: false });
@@ -1856,6 +1989,7 @@
             if (role === 'assistant' && typeof marked !== 'undefined') {
                 contentDiv.innerHTML = renderMarkdownWithMath(content);
                 attachCodeBlockCopyButtons(contentDiv);
+                makeTablesInteractive(contentDiv);
                 
                 // Render mermaid diagrams if any
                 setTimeout(() => {
@@ -2090,7 +2224,7 @@
             } catch (e) {
                 console.error('Failed to rename session', e);
                 alert('Error renaming session');
-            }
+                       }
         }
 
         function updateChatBackground() {
