@@ -1284,14 +1284,14 @@
 
                     return `
                     <div class="paper-item" data-paper-id="${paper.id}" onclick="selectPaper('${paper.id}')" style="display: flex; flex-direction: column;">
-                        <div class="paper-name" style="margin-bottom: ${filenameHtml ? '2px' : '6px'}; line-height: 1.35; font-size: 13px;">${displayTitle}</div>
+                        <div style="display: flex; gap: 8px; align-items: flex-start; margin-bottom: ${filenameHtml ? '2px' : '6px'}; justify-content: space-between;">
+                             <div class="paper-name" style="line-height: 1.35; font-size: 13px; flex-grow: 1;">${displayTitle}</div>
+                             <span style="font-size: 11px; color: #555; background: #e0e0e0; padding: 1px 5px; border-radius: 4px; font-family: monospace; min-width: 24px; text-align: center; height: fit-content; margin-top: 2px; flex-shrink: 0;">${(index + 1).toString().padStart(2, '0')}</span>
+                        </div>
                         ${filenameHtml}
                         
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: auto; padding-top: 4px; border-top: 1px solid #f0f0f0;">
-                            <div style="display: flex; align-items: center; gap: 6px;">
-                                <span style="font-size: 11px; color: #555; background: #e0e0e0; padding: 1px 5px; border-radius: 4px; font-family: monospace; font-weight: 600; min-width: 24px; text-align: center;">${(index + 1).toString().padStart(2, '0')}</span>
-                                <div class="paper-meta" style="font-size: 11px; color: #888;">${paper.page_count} p. • ${paper.citation_count !== undefined && paper.citation_count !== null ? paper.citation_count : 0} cites</div>
-                            </div>
+                            <div class="paper-meta" style="font-size: 11px; color: #888;">${paper.page_count} p. • ${paper.citation_count !== undefined && paper.citation_count !== null ? paper.citation_count : 0} cites</div>
                             
                             <div style="display: flex; gap: 8px; align-items: center;">
                                 <button
