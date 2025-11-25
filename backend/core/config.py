@@ -21,7 +21,6 @@ class AppConfig(BaseModel):
 
     name: str = "Journal Article AI Assistant"
     version: str = "1.0.0"
-    papers_folder: str = "./papers"
     host: str = "0.0.0.0"
     port: int = 8000
 
@@ -37,24 +36,6 @@ class AgentConfig(BaseModel):
     orchestrator_model: Optional[str] = None
     orchestrator_temperature: float = 0.2
     orchestrator_max_output_tokens: int = 4096
-
-
-class MemoryConfig(BaseModel):
-    """Conversation memory configuration."""
-
-    persist_across_sessions: bool = True
-    max_history_messages: int = 50
-    enable_summarization: bool = True
-    summarization_threshold: int = 20
-
-
-class TokensConfig(BaseModel):
-    """Token tracking configuration."""
-
-    track_usage: bool = True
-    session_budget: int = 1000000
-    enable_warnings: bool = True
-    warning_threshold: float = 0.8
 
 
 class DatabaseConfig(BaseModel):
@@ -83,6 +64,7 @@ class MindmapConfig(BaseModel):
     node_name_max_length: int = 60
     citation_node_min_size: int = 4
     citation_node_max_size: int = 15
+    citation_count_max_threshold: int = 500
 
 
 class ImageConfig(BaseModel):
@@ -95,25 +77,15 @@ class ImageConfig(BaseModel):
     height: int = 1024
 
 
-class LoggingConfig(BaseModel):
-    """Logging configuration."""
-
-    level: str = "INFO"
-    format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-
-
 class Settings(BaseModel):
     """Application settings loaded from config.toml and environment variables."""
 
     app: AppConfig = Field(default_factory=AppConfig)
     agent: AgentConfig = Field(default_factory=AgentConfig)
-    memory: MemoryConfig = Field(default_factory=MemoryConfig)
-    tokens: TokensConfig = Field(default_factory=TokensConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     chunking: ChunkingConfig = Field(default_factory=ChunkingConfig)
     mindmap: MindmapConfig = Field(default_factory=MindmapConfig)
     image: ImageConfig = Field(default_factory=ImageConfig)
-    logging: LoggingConfig = Field(default_factory=LoggingConfig)
 
     # Environment variables
     google_api_key: str = Field(default="")
@@ -135,24 +107,14 @@ class Settings(BaseModel):
         settings = cls(
             app=AppConfig(**config_data.get("app", {})),
             agent=AgentConfig(**config_data.get("agent", {})),
-            memory=MemoryConfig(**config_data.get("memory", {})),
-            tokens=TokensConfig(**config_data.get("tokens", {})),
             database=DatabaseConfig(**config_data.get("database", {})),
             chunking=ChunkingConfig(**config_data.get("chunking", {})),
             mindmap=MindmapConfig(**config_data.get("mindmap", {})),
             image=ImageConfig(**config_data.get("image", {})),
-            logging=LoggingConfig(**config_data.get("logging", {})),
             google_api_key=os.getenv("GOOGLE_API_KEY", ""),
         )
 
         return settings
-
-    def get_papers_folder_path(self) -> Path:
-        """Get absolute path to papers folder."""
-        path = Path(self.app.papers_folder)
-        if not path.is_absolute():
-            path = ROOT_DIR / path
-        return path
 
     def get_vector_db_path(self) -> Path:
         """Get absolute path to vector database."""

@@ -392,13 +392,14 @@ async def serve_mindmap_page():
              const minR = __MIN_R__;
              const maxR = __MAX_R__;
              
-             if (globalMaxCitations <= globalMinCitations) return minR;
+             // Absolute logarithmic scale: 0 to __MAX_CITATIONS__ citations
+             const maxCitations = __MAX_CITATIONS__;
+             const cappedCount = Math.min(count, maxCitations);
              
-             const minLog = Math.log(globalMinCitations + 1);
-             const maxLog = Math.log(globalMaxCitations + 1);
-             const valLog = Math.log(count + 1);
+             const minLog = Math.log(1); // log(0 + 1)
+             const maxLog = Math.log(maxCitations + 1);
+             const valLog = Math.log(cappedCount + 1);
              
-             // Linear interpolation on log scale
              const t = (valLog - minLog) / (maxLog - minLog);
              return minR + t * (maxR - minR);
         }
@@ -842,6 +843,7 @@ async def serve_mindmap_page():
     """
     html = html.replace("__MIN_R__", str(settings.mindmap.citation_node_min_size))
     html = html.replace("__MAX_R__", str(settings.mindmap.citation_node_max_size))
+    html = html.replace("__MAX_CITATIONS__", str(settings.mindmap.citation_count_max_threshold))
     return HTMLResponse(content=html)
 
 

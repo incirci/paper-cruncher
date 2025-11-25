@@ -1,7 +1,6 @@
 [app]
 name = "Journal Article AI Assistant"
 version = "1.0.0"
-papers_folder = "./papers"
 host = "localhost"
 port = 8000
 
@@ -15,18 +14,6 @@ temperature = 0.2   # setting for factuality, lower (min 0.0) more factual, high
 orchestrator_model = "gemini-2.5-flash-preview-09-2025"
 orchestrator_temperature = 0.2
 orchestrator_max_output_tokens = 4096
-
-[memory]
-persist_across_sessions = true
-max_history_messages = 50
-enable_summarization = true
-summarization_threshold = 20
-
-[tokens]
-track_usage = true
-session_budget = 1000000
-enable_warnings = true
-warning_threshold = 0.8
 
 [database]
 vector_db_path = "./data/vectordb"
@@ -55,6 +42,3 @@ mime_type = "image/png"
 width = 1024
 height = 1024
 
-[logging]
-level = "INFO"
-format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
