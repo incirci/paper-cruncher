@@ -290,13 +290,14 @@ async def serve_mindmap_page():
           border-color: #9ca3af;
         }
         .btn-primary {
-            background: #1a73e8;
-            color: white;
-            border-color: #1a73e8;
+            background: #e8f0fe;
+            color: #1967d2;
+            border-color: #d2e3fc;
         }
         .btn-primary:hover {
-            background: #1557b0;
-            border-color: #1557b0;
+            background: #d2e3fc;
+            color: #185abc;
+            border-color: #c2d7fa;
         }
         #status {
           color: #666;
