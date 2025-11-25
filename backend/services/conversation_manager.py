@@ -318,6 +318,13 @@ class ConversationManager:
 
                 sessions = []
                 for row in cursor.fetchall():
+                    paper_ids = []
+                    if row[6]:
+                        try:
+                            paper_ids = json.loads(row[6])
+                        except Exception:
+                            paper_ids = []
+                            
                     sessions.append(
                         {
                             "session_id": row[0],
@@ -326,7 +333,7 @@ class ConversationManager:
                             "updated_at": row[3],
                             "total_tokens": row[4],
                             "selected_paper_id": row[5],
-                            "paper_ids": row[6],
+                            "paper_ids": paper_ids,
                             "notes": row[7],
                             "message_count": row[8],
                         }

@@ -72,17 +72,25 @@
         }
 
         .sessions-header {
-            padding: 16px;
+            height: 48px;
+            padding: 0 16px;
             border-bottom: 1px solid #dce0e6;
             display: flex;
-            justify-content: space-between;
+            justify-content: center;
             align-items: center;
+            box-sizing: border-box;
+            background-color: #f8fafc;
         }
 
         .sessions-header h3 {
-            font-size: 14px;
-            font-weight: 600;
-            color: #1f2937;
+            font-size: 18px;
+            font-weight: 800;
+            letter-spacing: -0.025em;
+            background: linear-gradient(135deg, #1e293b 0%, #64748b 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            color: #1e293b;
         }
 
         .sessions-list {
@@ -144,11 +152,14 @@
         }
 
         .sidebar-header {
-            padding: 16px;
+            height: 48px;
+            padding: 0 16px;
             border-bottom: 1px solid #dce0e6;
             display: flex;
-            justify-content: space-between;
+            justify-content: center;
             align-items: center;
+            box-sizing: border-box;
+            background-color: #f8fafc;
         }
 
         .sidebar-title-row {
@@ -159,9 +170,14 @@
         }
 
         .sidebar-header h3 {
-            font-size: 14px;
-            font-weight: 600;
-            color: #1f2937;
+            font-size: 18px;
+            font-weight: 800;
+            letter-spacing: -0.025em;
+            background: linear-gradient(135deg, #1e293b 0%, #64748b 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            color: #1e293b;
         }
 
         .progress-container {
@@ -639,7 +655,7 @@
         }
 
         .input-container {
-            padding: 24px;
+            padding: 12px;
             display: flex;
             justify-content: center;
             background: transparent;
@@ -653,7 +669,7 @@
             align-items: flex-end;
             background: #f4f4f4;
             border-radius: 26px;
-            padding: 10px;
+            padding: 8px;
             border: 1px solid transparent;
             transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
         }
@@ -750,22 +766,27 @@
         .scroll-to-bottom {
             position: absolute;
             right: 24px;
-            bottom: 96px;
-            padding: 8px 12px;
-            border-radius: 999px;
+            bottom: 80px;
+            width: 36px;
+            height: 36px;
+            padding: 0;
+            border-radius: 50%;
             border: 1px solid #d1d5db;
             background: #ffffff;
             cursor: pointer;
-            font-size: 12px;
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.1);
             display: none;
             align-items: center;
-            gap: 4px;
+            justify-content: center;
             z-index: 10;
+            transition: all 0.2s ease;
+            color: #6b7280;
         }
 
-        .scroll-to-bottom span {
-            font-size: 14px;
+        .scroll-to-bottom:hover {
+            background-color: #f9fafb;
+            color: #111827;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         }
 
         .empty-state {
@@ -903,45 +924,52 @@
         /* Sidebar Handles */
         .sidebar-handle {
             position: absolute;
-            top: 50%;
-            transform: translateY(-50%);
+            top: 0;
             width: 20px;
             height: 48px;
             background: white;
             border: 1px solid #dce0e6;
+            border-radius: 0;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
             z-index: 100;
             color: #6b7280;
-            font-size: 12px;
-            transition: background-color 0.2s, color 0.2s;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            font-size: 16px;
+            transition: all 0.3s ease;
+            box-shadow: none;
         }
 
         .sidebar-handle:hover {
             background-color: #f9fafb;
             color: #1a73e8;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
 
         .sidebar .sidebar-handle {
-            right: -20px;
-            border-radius: 0 8px 8px 0;
-            border-left: none;
+            right: 0;
+        }
+
+        .sidebar.collapsed .sidebar-handle {
+            right: -21px;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
         }
 
         .sessions-sidebar .sidebar-handle {
-            left: -20px;
-            border-radius: 8px 0 0 8px;
-            border-right: none;
+            left: 0;
         }
 
-        .sidebar .sidebar-handle::after { content: '‹'; font-size: 18px; }
-        .sidebar.collapsed .sidebar-handle::after { content: '›'; }
+        .sessions-sidebar.collapsed .sidebar-handle {
+            left: -38px;
+            box-shadow: -2px 2px 5px rgba(0,0,0,0.1);
+        }
 
-        .sessions-sidebar .sidebar-handle::after { content: '›'; font-size: 18px; }
-        .sessions-sidebar.collapsed .sidebar-handle::after { content: '‹'; }
+        .sidebar .sidebar-handle::after { content: '‹'; padding-bottom: 2px; }
+        .sidebar.collapsed .sidebar-handle::after { content: '›'; padding-bottom: 2px; }
+
+        .sessions-sidebar .sidebar-handle::after { content: '›'; padding-bottom: 2px; }
+        .sessions-sidebar.collapsed .sidebar-handle::after { content: '‹'; padding-bottom: 2px; }
 
         .icon-btn {
             background: none;
@@ -963,7 +991,6 @@
         <div class="sidebar-handle" onclick="toggleSidebar()"></div>
         <div class="sidebar-header">
             <h3>Papers</h3>
-            <span id="paperCount">0</span>
         </div>
         <input 
             type="file" 
@@ -1003,8 +1030,11 @@
         <div class="chat-container" id="chatContainer">
             <div class="empty-state">Ask a question about the papers</div>
         </div>
-        <button class="scroll-to-bottom" id="scrollToBottomButton" onclick="scrollToBottom()">
-            <span>↓</span> New messages
+        <button class="scroll-to-bottom" id="scrollToBottomButton" onclick="scrollToBottom()" title="New messages">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <polyline points="19 12 12 19 5 12"></polyline>
+            </svg>
         </button>
 
         <div class="input-container">
@@ -1044,7 +1074,7 @@
     <div class="sessions-sidebar" id="sessionsSidebar">
         <div class="sidebar-handle" onclick="toggleSessionsSidebar()"></div>
         <div class="sessions-header">
-            <h3>💬 Sessions</h3>
+            <h3>Sessions</h3>
         </div>
         <button class="btn btn-primary" onclick="newSession()" style="margin: 8px; width: calc(100% - 16px);">＋ New Session</button>
         <button class="btn btn-secondary" onclick="duplicateSession()" style="margin: 0 8px 8px 8px; width: calc(100% - 16px);">❐ Duplicate Session</button>
@@ -1417,7 +1447,6 @@
                 const data = await response.json();
                 
                 const papersList = document.getElementById('papersList');
-                const paperCount = document.getElementById('paperCount');
                 const allPapers = data.papers || [];
 
                 // If filterIds is explicitly provided (even if empty), use it
@@ -1434,7 +1463,6 @@
                 // globally indexed papers. This keeps sessions
                 // properly scoped even across multiple windows.
                 currentPaperIds = scopedPapers.map(p => p.id);
-                paperCount.textContent = scopedPapers.length;
 
                 if (!scopedPapers.length) {
                     papersList.innerHTML = '<div class="empty-state">No papers available</div>';
@@ -2286,6 +2314,7 @@
                     });
                     
                     const displayName = s.session_name || `Session ${shortId}...`;
+                    const paperCount = Array.isArray(s.paper_ids) ? s.paper_ids.length : 0;
                     
                     return `
                         <div class="session-item ${isActive ? 'active' : ''}" onclick="switchToSession('${s.session_id}')">
@@ -2301,7 +2330,7 @@
                                 >✕</button>
                             </div>
                             <div class="session-meta">
-                                ${s.message_count || 0} messages • ${s.total_tokens || 0} tokens
+                                ${s.message_count || 0} messages • ${paperCount} papers • ${s.total_tokens || 0} tokens
                             </div>
                             <div class="session-meta">
                                 ${timeStr}
