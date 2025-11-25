@@ -276,24 +276,27 @@ async def serve_mindmap_page():
         }
         .btn { 
           padding: 8px 16px; 
-          border: 1px solid #d0d0d0; 
+          border: 1px solid #d1d5db; 
           background: white;
           border-radius: 6px; 
           cursor: pointer;
-          font-size: 14px;
+          font-size: 13px;
           transition: all 0.2s;
+          color: #374151;
+          font-weight: 500;
         }
         .btn:hover {
-          background: #f5f5f5;
-          border-color: #999;
+          background: #f3f4f6;
+          border-color: #9ca3af;
         }
         .btn-primary {
-            background: #007bff;
+            background: #1a73e8;
             color: white;
-            border-color: #0056b3;
+            border-color: #1a73e8;
         }
         .btn-primary:hover {
-            background: #0056b3;
+            background: #1557b0;
+            border-color: #1557b0;
         }
         #status {
           color: #666;

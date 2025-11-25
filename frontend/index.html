@@ -31,13 +31,15 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             height: 100vh;
             display: flex;
-            background: #f0f2f5;
+            background-color: #f0f2f5;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.15'/%3E%3C/svg%3E");
             overflow-x: hidden;
         }
 
         .sidebar {
             width: 300px;
-            background: white;
+            background-color: white;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.15'/%3E%3C/svg%3E");
             border-right: 1px solid #dce0e6;
             display: flex;
             flex-direction: column;
@@ -51,7 +53,8 @@
 
         .sessions-sidebar {
             width: 280px;
-            background: white;
+            background-color: white;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.15'/%3E%3C/svg%3E");
             border-left: 1px solid #dce0e6;
             display: flex;
             flex-direction: column;
@@ -90,7 +93,7 @@
             border-radius: 6px;
             cursor: pointer;
             transition: background 0.2s;
-            border: 2px solid transparent;
+            border: 1px solid #d1d5db;
         }
 
         .session-item:hover {
@@ -135,24 +138,6 @@
             margin-top: 4px;
         }
 
-        .new-session-btn {
-            width: 100%;
-            padding: 10px;
-            margin: 8px;
-            margin-top: 0;
-            background: #1a73e8;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 13px;
-            font-weight: 500;
-        }
-
-        .new-session-btn:hover {
-            background: #1557b0;
-        }
-
         .sidebar-header {
             padding: 20px;
             border-bottom: 1px solid #dce0e6;
@@ -173,35 +158,6 @@
         .sidebar-header h2 {
             font-size: 16px;
             font-weight: 600;
-        }
-
-        .index-button {
-            width: 100%;
-            padding: 10px;
-            background: #1a73e8;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 13px;
-            font-weight: 500;
-        }
-
-        .index-button:hover {
-            background: #1557b0;
-        }
-
-        .index-button:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-        }
-
-        .index-button.secondary {
-            background: #6c757d;
-        }
-
-        .index-button.secondary:hover {
-            background: #5a6268;
         }
 
         .progress-container {
@@ -247,7 +203,7 @@
             border-radius: 6px;
             cursor: pointer;
             transition: background 0.2s;
-            border: 2px solid transparent;
+            border: 1px solid #d1d5db;
         }
 
         .paper-item:hover {
@@ -275,7 +231,7 @@
             flex: 1;
             display: flex;
             flex-direction: column;
-            background: white;
+            background: transparent;
             min-width: 0;
         }
 
@@ -287,39 +243,100 @@
             align-items: center;
         }
 
-        .toggle-sidebar {
+        /* Unified Button Styles */
+        .btn {
             padding: 8px 16px;
-            background: #f0f2f5;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 14px;
-        }
-
-        .toggle-sidebar:hover {
-            background: #e5e7eb;
-        }
-
-        .toggle-sidebar.has-notes {
-            background-color: #fff3cd;
-            border: 1px solid #ffeeba;
-            color: #856404;
-        }
-
-        .danger-button {
-            padding: 8px 16px;
-            background: #dc3545;
-            color: #fff;
-            border: none;
-            border-radius: 6px;
+            border-radius: 8px;
             cursor: pointer;
             font-size: 13px;
-            font-weight: 600;
-            box-shadow: 0 0 0 1px rgba(220, 53, 69, 0.4);
+            font-weight: 500;
+            transition: all 0.2s ease;
+            border: 1px solid transparent;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            line-height: 1.4;
+            font-family: inherit;
         }
 
-        .danger-button:hover {
-            background: #b02a37;
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        /* Secondary Button (Default UI actions) */
+        .btn-secondary {
+            background: white;
+            border: 1px solid #dce0e6;
+            color: #4b5563;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+        .btn-secondary:hover {
+            background: #f9fafb;
+            border-color: #cdd2d9;
+            color: #1f2937;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .btn-secondary.has-notes {
+            background-color: #fffbeb;
+            border-color: #fcd34d;
+            color: #92400e;
+        }
+
+        /* Primary Button (Main actions) */
+        .btn-primary {
+            background: #1a73e8;
+            color: white;
+            border: 1px solid #1a73e8;
+            box-shadow: 0 1px 2px rgba(26, 115, 232, 0.2);
+        }
+        .btn-primary:hover {
+            background: #1557b0;
+            border-color: #1557b0;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(26, 115, 232, 0.3);
+        }
+        .btn-primary:disabled {
+            background: #93c5fd;
+            border-color: #93c5fd;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        /* Danger Button (Destructive actions) */
+        .btn-danger {
+            background: white;
+            border: 1px solid #fecaca;
+            color: #dc2626;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+        .btn-danger:hover {
+            background: #fef2f2;
+            border-color: #dc2626;
+            color: #b91c1c;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(220, 38, 38, 0.1);
+        }
+
+        /* Warning Button (Prune) */
+        .btn-warning {
+            background: white;
+            border: 1px solid #fed7aa;
+            color: #ea580c;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+        .btn-warning:hover {
+            background: #fff7ed;
+            border-color: #ea580c;
+            color: #c2410c;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(234, 88, 12, 0.1);
+        }
+
+        .btn-block {
+            width: 100%;
         }
 
         .stats {
@@ -616,7 +633,8 @@
             padding: 24px;
             display: flex;
             justify-content: center;
-            background: white;
+            background-color: white;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.15'/%3E%3C/svg%3E");
         }
 
         .input-wrapper {
@@ -662,7 +680,7 @@
             bottom: 8px;
             width: 32px;
             height: 32px;
-            background: #e5e5e5;
+            background: #e2e8f0;
             color: white;
             border: none;
             border-radius: 50%;
@@ -674,12 +692,12 @@
         }
 
         .send-button.active {
-            background: #007bff;
+            background: #1a73e8;
             cursor: pointer;
         }
 
         .send-button.active:hover {
-            background: #0056b3;
+            background: #1557b0;
         }
 
         .send-button svg {
@@ -701,11 +719,11 @@
             bottom: 96px;
             padding: 8px 12px;
             border-radius: 999px;
-            border: 1px solid #ddd;
-            background: #ffffffee;
+            border: 1px solid #d1d5db;
+            background: #ffffff;
             cursor: pointer;
             font-size: 12px;
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.1);
             display: none;
             align-items: center;
             gap: 4px;
@@ -863,14 +881,14 @@
                 multiple 
                 style="display:none" 
             >
-            <button class="index-button secondary" id="uploadButton" onclick="triggerPaperUpload()" style="width: 100%;">
+            <button class="btn btn-primary btn-block" id="uploadButton" onclick="triggerPaperUpload()" style="margin-bottom: 8px;">
                 ⬆️ Upload PDFs
             </button>
             <div style="display: flex; gap: 8px; width: 100%;">
-                <button class="index-button secondary" id="mindmapButton" onclick="openMindmap()" style="flex: 1;">
+                <button class="btn btn-secondary" id="mindmapButton" onclick="openMindmap()" style="flex: 1;">
                     🧠 View Mindmap
                 </button>
-                <button class="index-button secondary" id="mindmapQueryButton" onclick="editMindmapQuery()" title="Edit mindmap instructions" style="width: 40px; padding: 0; display: flex; align-items: center; justify-content: center;">
+                <button class="btn btn-secondary" id="mindmapQueryButton" onclick="editMindmapQuery()" title="Edit mindmap instructions" style="width: 40px; padding: 0;">
                     ✏️
                 </button>
             </div>
@@ -894,14 +912,14 @@
     <div class="main-content">
         <div class="header">
             <div style="display: flex; gap: 12px; align-items: center;">
-                <button class="toggle-sidebar" onclick="toggleSessionsSidebar()">💬 Sessions</button>
-                <button class="toggle-sidebar" onclick="toggleSidebar()">☰ Papers</button>
-                <button class="toggle-sidebar" id="notesButton" onclick="openNotes()">📝 Notes</button>
+                <button class="btn btn-secondary" onclick="toggleSessionsSidebar()">💬 Sessions</button>
+                <button class="btn btn-secondary" onclick="toggleSidebar()">☰ Papers</button>
+                <button class="btn btn-secondary" id="notesButton" onclick="openNotes()">📝 Notes</button>
             </div>
             <div class="stats">
-                <button class="toggle-sidebar" style="margin-right: 12px;" onclick="clearChat()">🧹 Clear Chat</button>
-                <button class="danger-button" style="background: #ff9800; margin-right: 12px;" onclick="pruneData()">✂ Prune Data</button>
-                <button class="danger-button" onclick="resetAllData()">⚠ Reset All Data</button>
+                <button class="btn btn-secondary" style="margin-right: 12px;" onclick="clearChat()">🧹 Clear Chat</button>
+                <button class="btn btn-warning" style="margin-right: 12px;" onclick="pruneData()">✂ Prune Data</button>
+                <button class="btn btn-danger" onclick="resetAllData()">⚠ Reset All Data</button>
             </div>
         </div>
 
@@ -932,10 +950,10 @@
     <div class="sessions-sidebar" id="sessionsSidebar">
         <div class="sessions-header">
             <h3>💬 Sessions</h3>
-            <button class="toggle-sidebar" style="padding: 4px 8px; font-size: 12px;" onclick="toggleSessionsSidebar()">✕</button>
+            <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px;" onclick="toggleSessionsSidebar()">✕</button>
         </div>
-        <button class="new-session-btn" onclick="newSession()">＋ New Session</button>
-        <button class="new-session-btn" onclick="duplicateSession()" style="background: #6c757d; margin-top: 0;">❐ Duplicate Session</button>
+        <button class="btn btn-primary" onclick="newSession()" style="margin: 8px; width: calc(100% - 16px);">＋ New Session</button>
+        <button class="btn btn-secondary" onclick="duplicateSession()" style="margin: 0 8px 8px 8px; width: calc(100% - 16px);">❐ Duplicate Session</button>
         <div class="sessions-list" id="sessionsList">
             <div class="empty-state" style="padding: 20px; text-align: center; color: #999; font-size: 13px;">No saved sessions</div>
         </div>
@@ -946,14 +964,14 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h3>Session Notes</h3>
-                <button class="toggle-sidebar" style="padding: 4px 8px;" onclick="closeNotes()">✕</button>
+                <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px;" onclick="closeNotes()">✕</button>
             </div>
             <div class="modal-body">
                 <textarea class="notes-textarea" id="sessionNotes" placeholder="Add notes for this session..."></textarea>
             </div>
             <div class="modal-footer">
-                <button class="index-button secondary" onclick="closeNotes()" style="width: auto;">Close</button>
-                <button class="index-button" onclick="saveNotes()" style="width: auto;">Save Notes</button>
+                <button class="btn btn-secondary" onclick="closeNotes()" style="width: auto;">Close</button>
+                <button class="btn btn-primary" onclick="saveNotes()" style="width: auto;">Save Notes</button>
             </div>
         </div>
     </div>
@@ -963,7 +981,7 @@
         <div class="modal-content" style="width: 95vw; height: 95vh; max-width: none; background: white; overflow: hidden; display: flex; flex-direction: column;" onclick="event.stopPropagation()">
             <div class="modal-header">
                 <h3>Diagram View</h3>
-                <button class="toggle-sidebar" style="padding: 4px 8px;" onclick="closeImageModal()">✕</button>
+                <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px;" onclick="closeImageModal()">✕</button>
             </div>
             <div class="modal-body" id="imageModalBody" style="overflow: auto; display: flex; align-items: center; justify-content: center; background: #fff; padding: 0;">
                 <!-- Content goes here -->
