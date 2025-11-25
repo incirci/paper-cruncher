@@ -403,7 +403,20 @@ class ConversationManager:
         if not source_conv:
             raise ValueError("Source session not found")
             
-        new_name = f"Copy of {source_conv.session_name}" if source_conv.session_name else "Copy of Session"
+        base_name = source_conv.session_name or "Session"
+        
+        # Get existing names to avoid collisions
+        with self._lock:
+            with sqlite3.connect(self.db_path, timeout=30.0) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT session_name FROM conversations")
+                existing_names = {row[0] for row in cursor.fetchall() if row[0]}
+        
+        copy_num = 1
+        new_name = f"{base_name} ({copy_num})"
+        while new_name in existing_names:
+            copy_num += 1
+            new_name = f"{base_name} ({copy_num})"
         
         return self.create_session(
             selected_paper_id=source_conv.selected_paper_id,
