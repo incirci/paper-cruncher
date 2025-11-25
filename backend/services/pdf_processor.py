@@ -119,40 +119,16 @@ class PDFProcessor:
         return ""
 
     def build_canonical_title(self, filename: str, inferred_title: str) -> str:
-        """Decide how to combine filename and inferred title.
-
-        If the filename already mostly matches the inferred title (ignoring
-        extension, case, and minor token differences), we just return the
-        filename. Otherwise we return "<filename> (<inferred_title>)".
         """
-        if not inferred_title:
-            return filename
-
-        # Strip extension from filename for comparison
-        base = filename.rsplit(".", 1)[0]
-
-        def normalize(s: str) -> list[str]:
-            s = s.lower()
-            for ch in "-_.,()[]":
-                s = s.replace(ch, " ")
-            tokens = [t for t in s.split() if t]
-            return tokens
-
-        f_tokens = normalize(base)
-        t_tokens = normalize(inferred_title)
-
-        if not f_tokens or not t_tokens:
-            return f"{filename} ({inferred_title})"
-
-        # Compute overlap ratio: how many filename tokens appear in title tokens
-        overlap = sum(1 for tok in f_tokens if tok in t_tokens)
-        overlap_ratio = overlap / len(f_tokens)
-
-        # If filename and inferred title are already very similar, just use filename
-        if overlap_ratio >= 0.7:
-            return filename
-
-        return f"{filename} ({inferred_title})"
+        Determine the canonical title.
+        
+        Per user requirement:
+        - If inferred_title is available, use it.
+        - Else, use filename.
+        """
+        if inferred_title and inferred_title.strip():
+            return inferred_title.strip()
+        return filename
 
     def extract_metadata(self, pdf_path: Path, original_filename: str | None = None) -> PaperMetadata:
         """Extract metadata from a PDF file."""

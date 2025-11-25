@@ -108,7 +108,7 @@ class PaperManager:
                         if details.get("title"):
                              # Update inferred title with the high-quality OpenAlex title
                              metadata.inferred_title = details.get("title")
-                             # Rebuild canonical title to ensure "filename (title)" format
+                             # Rebuild canonical title to ensure it follows the new simplified logic
                              metadata.canonical_title = self.pdf_processor.build_canonical_title(
                                  metadata.filename, 
                                  metadata.inferred_title

@@ -195,14 +195,18 @@ class CitationService:
         
         for p in local_papers:
             # Normalize: lowercase, alphanumeric only
+            # Use canonical_title (which is now the best title)
             norm = "".join(c.lower() for c in p.canonical_title if c.isalnum())
             local_titles_map[norm] = p.id
             
-            # Also index the inferred title part if present
-            if "(" in p.canonical_title:
-                inferred = p.canonical_title.rsplit("(", 1)[1].rstrip(")")
-                norm_inf = "".join(c.lower() for c in inferred if c.isalnum())
+            # Also index the inferred title explicitly if present
+            if p.inferred_title:
+                norm_inf = "".join(c.lower() for c in p.inferred_title if c.isalnum())
                 local_titles_map[norm_inf] = p.id
+            
+            # Also index the filename just in case
+            norm_file = "".join(c.lower() for c in p.filename if c.isalnum())
+            local_titles_map[norm_file] = p.id
 
         def format_node(paper_obj: Dict[str, Any]) -> Dict[str, Any]:
             title = paper_obj.get("title") or "Unknown Title"
