@@ -45,6 +45,7 @@
             flex-direction: column;
             transition: margin-left 0.3s;
             flex-shrink: 0;
+            position: relative;
         }
 
         .sidebar.collapsed {
@@ -60,6 +61,7 @@
             flex-direction: column;
             transition: margin-right 0.3s;
             flex-shrink: 0;
+            position: relative;
         }
 
         .sessions-sidebar.collapsed {
@@ -866,10 +868,54 @@
             object-fit: contain;
             border-radius: 8px;
         }
+
+        /* Sidebar Handles */
+        .sidebar-handle {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 20px;
+            height: 48px;
+            background: white;
+            border: 1px solid #dce0e6;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            color: #6b7280;
+            font-size: 12px;
+            transition: background-color 0.2s, color 0.2s;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .sidebar-handle:hover {
+            background-color: #f9fafb;
+            color: #1a73e8;
+        }
+
+        .sidebar .sidebar-handle {
+            right: -20px;
+            border-radius: 0 8px 8px 0;
+            border-left: none;
+        }
+
+        .sessions-sidebar .sidebar-handle {
+            left: -20px;
+            border-radius: 8px 0 0 8px;
+            border-right: none;
+        }
+
+        .sidebar .sidebar-handle::after { content: '‹'; font-size: 18px; }
+        .sidebar.collapsed .sidebar-handle::after { content: '›'; }
+
+        .sessions-sidebar .sidebar-handle::after { content: '›'; font-size: 18px; }
+        .sessions-sidebar.collapsed .sidebar-handle::after { content: '‹'; }
     </style>
 </head>
 <body>
     <div class="sidebar" id="sidebar">
+        <div class="sidebar-handle" onclick="toggleSidebar()"></div>
         <div class="sidebar-header">
             <div class="sidebar-title-row">
                 <h2>Papers</h2>
@@ -913,8 +959,6 @@
     <div class="main-content">
         <div class="header">
             <div style="display: flex; gap: 12px; align-items: center;">
-                <button class="btn btn-secondary" onclick="toggleSessionsSidebar()">💬 Sessions</button>
-                <button class="btn btn-secondary" onclick="toggleSidebar()">☰ Papers</button>
                 <button class="btn btn-secondary" id="notesButton" onclick="openNotes()">📝 Notes</button>
             </div>
             <div class="stats">
@@ -949,9 +993,9 @@
     </div>
 
     <div class="sessions-sidebar" id="sessionsSidebar">
+        <div class="sidebar-handle" onclick="toggleSessionsSidebar()"></div>
         <div class="sessions-header">
             <h3>💬 Sessions</h3>
-            <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px;" onclick="toggleSessionsSidebar()">✕</button>
         </div>
         <button class="btn btn-primary" onclick="newSession()" style="margin: 8px; width: calc(100% - 16px);">＋ New Session</button>
         <button class="btn btn-secondary" onclick="duplicateSession()" style="margin: 0 8px 8px 8px; width: calc(100% - 16px);">❐ Duplicate Session</button>
@@ -1948,7 +1992,7 @@
                             messageDiv.removeAttribute('id');
                             contentDiv.removeAttribute('id');
                         }
-                        if (data.type === 'error') {
+                        if ( data.type === 'error') {
                             const msg = data.message || 'Server error';
                             // Preserve any streamed content and append a
                             // warning instead of overwriting the answer.
