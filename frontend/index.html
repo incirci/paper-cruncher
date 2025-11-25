@@ -1295,7 +1295,7 @@
                         ${filenameHtml}
                         
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: auto; padding-top: 4px; border-top: 1px solid #f0f0f0;">
-                            <div class="paper-meta" style="font-size: 11px; color: #888;">${paper.publication_year ? paper.publication_year + ' • ' : ''}${paper.page_count} p. • ${paper.citation_count !== undefined && paper.citation_count !== null ? paper.citation_count : 0} cites</div>
+                            <div class="paper-meta" style="font-size: 11px; color: #888;">${paper.publication_year ? paper.publication_year + ' • ' : ''}${paper.page_count} p.${(paper.citation_count !== undefined && paper.citation_count !== null && paper.citation_count > 0) ? ' • ' + paper.citation_count + ' cites' : ''}</div>
                             
                             <div style="display: flex; gap: 8px; align-items: center;">
                                 <button
@@ -1439,20 +1439,12 @@
                 // Helper function to quote content if needed
                 const quoteIfNeeded = (content, start, end) => {
                     // If content is already fully quoted (starts and ends with "), strip quotes and re-process
-                    // This handles cases where the regex captured quotes but we want to ensure internal escaping
-                    let inner = content;
                     if (content.startsWith('"') && content.endsWith('"') && content.length >= 2) {
-                        // It's already quoted. We should trust it, OR we can strip and re-quote to be safe.
-                        // But if we strip, we must unescape \" to " first.
-                        // However, if it was protected by placeholders, we wouldn't be here.
-                        // If we are here, it means it wasn't protected (e.g. regex mismatch).
-                        // Let's assume if it's quoted, it's fine, just return as is.
                         return `${start}${content}${end}`;
                     }
 
-                    // If content contains dangerous chars, quote it
-                    // Dangerous: ( ) [ ] { } " : ; & # < > | \n
-                    if (/[\(\)\[\]\{\}":;&<>\n|]/.test(content)) {
+                    // ALWAYS quote if it's not a simple alphanumeric string
+                    if (!/^[a-zA-Z0-9_]+$/.test(content)) {
                         const escaped = content
                             .replace(/\\/g, '\\\\')
                             .replace(/"/g, '\\"');
@@ -1462,46 +1454,49 @@
                 };
 
                 // Fix unquoted subgraph titles
-                // Matches: subgraph Title Text (no quotes, no brackets)
-                // We use a multiline regex to find subgraph lines
-                processed = processed.replace(/^\s*subgraph\s+([^"\[\r\n]+)(?:\r?\n|$)/gm, (match, content) => {
+                processed = processed.replace(/^(\s*)subgraph\s+([^"\[\r\n]+)(?:\r?\n|$)/gm, (match, indent, content) => {
                     const trimmed = content.trim();
-                    return `subgraph "${trimmed}"\n`;
+                    return `${indent}subgraph "${trimmed}"\n`;
                 });
 
-                // Fix unquoted labels for various shapes
-                // We process them in order of specificity (longest delimiters first)
+                // Combined regex for all node shapes to avoid double-processing nested content
+                // Order matters: specific delimiters must come before generic ones (e.g. [( before [)
+                const nodeRegex = /\[\[(?:(?!\]\]).)*\]\]|\[\((?:(?!\)\]).)*\)\]|\(\((?:(?!\)\)).)*\)\)|\(\[(?:(?!\]\)).)*\]\)|{{(?:(?!}}).)*}}|\[(?:[^\[\]]|\[[^\[\]]*\])*\]|\((?:[^()]*|\([^()]*\))*\)|\{(?:[^{}]|\{[^{}]*\})*\}/g;
 
-                // 1. [[...]] Subroutine
-                processed = processed.replace(/\[\[((?:(?!\]\]).)*)\]\]/g, (match, content) => quoteIfNeeded(content, '[[', ']]'));
+                processed = processed.replace(nodeRegex, (match) => {
+                    let content = '';
+                    let start = '';
+                    let end = '';
 
-                // 2. [([...])] Database (escaped regex for [() ])
-                processed = processed.replace(/\[\(((?:(?!\)\]).)*)\)\]/g, (match, content) => quoteIfNeeded(content, '[(', ')]'));
+                    if (match.startsWith('[[') && match.endsWith(']]')) {
+                        start = '[['; end = ']]';
+                        content = match.slice(2, -2);
+                    } else if (match.startsWith('[(') && match.endsWith(')]')) {
+                        start = '[('; end = ')]';
+                        content = match.slice(2, -2);
+                    } else if (match.startsWith('((') && match.endsWith('))')) {
+                        start = '(('; end = '))';
+                        content = match.slice(2, -2);
+                    } else if (match.startsWith('([') && match.endsWith('])')) {
+                        start = '(['; end = '])';
+                        content = match.slice(2, -2);
+                    } else if (match.startsWith('{{') && match.endsWith('}}')) {
+                        start = '{{'; end = '}}';
+                        content = match.slice(2, -2);
+                    } else if (match.startsWith('[') && match.endsWith(']')) {
+                        start = '['; end = ']';
+                        content = match.slice(1, -1);
+                    } else if (match.startsWith('(') && match.endsWith(')')) {
+                        start = '('; end = ')';
+                        content = match.slice(1, -1);
+                    } else if (match.startsWith('{') && match.endsWith('}')) {
+                        start = '{'; end = '}';
+                        content = match.slice(1, -1);
+                    } else {
+                        return match;
+                    }
 
-                // 3. ((...)) Circle
-                processed = processed.replace(/\(\(((?:(?!\)\)).)*)\)\)/g, (match, content) => quoteIfNeeded(content, '((', '))'));
-
-                // 4. ([...]) Stadium
-                processed = processed.replace(/\(\[((?:(?!\]\)).)*)\]\)/g, (match, content) => quoteIfNeeded(content, '([', '])'));
-
-                // 5. {{...}} Hexagon
-                processed = processed.replace(/{{((?:(?!}}).)*)}}/g, (match, content) => quoteIfNeeded(content, '{{', '}}'));
-
-                // 6. [...] Rect (supports 1 level of nesting for brackets)
-                processed = processed.replace(/\[((?:[^\[\]]|\[[^\[\]]*\])*)\]/g, (match, content) => quoteIfNeeded(content, '[', ']'));
-
-                // 7. (...) Round (supports 1 level of nesting for parens)
-                processed = processed.replace(/\(([^()]*|\([^()]*\))*\)/g, (match) => {
-                    // Extract content from (content)
-                    // We need to be careful because the regex matches the whole group including outer parens
-                    const content = match.slice(1, -1);
-                    return quoteIfNeeded(content, '(', ')');
-                });
-
-                // 8. {...} Rhombus (supports 1 level of nesting for braces)
-                processed = processed.replace(/\{([^{}]|\{[^{}]*\})*\}/g, (match) => {
-                    const content = match.slice(1, -1);
-                    return quoteIfNeeded(content, '{', '}');
+                    return quoteIfNeeded(content, start, end);
                 });
 
                 // Restore placeholders
@@ -1579,6 +1574,17 @@
                     errorMsg.style.fontSize = '12px';
                     errorMsg.style.marginBottom = '4px';
                     errorMsg.textContent = 'Diagram syntax error (showing raw):';
+
+                    // Debug: Show what we TRIED to render if it's different from raw
+                    if (codeToRender !== rawCode) {
+                        const debugMsg = document.createElement('div');
+                        debugMsg.style.color = '#666';
+                        debugMsg.style.fontSize = '11px';
+                        debugMsg.style.marginTop = '4px';
+                        debugMsg.style.whiteSpace = 'pre-wrap';
+                        debugMsg.textContent = 'Processed code that failed:\n' + codeToRender;
+                        pre.appendChild(debugMsg);
+                    }
                     
                     const wrapper = document.createElement('div');
                     wrapper.appendChild(errorMsg);
