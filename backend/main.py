@@ -338,8 +338,15 @@ async def serve_mindmap_page():
     <body>
       <div id="toolbar">
         <button class="btn" id="refreshBtn">🔄 Refresh</button>
+        <button class="btn" id="expandAllBtn">⊕ Expand All</button>
+        <button class="btn" id="collapseAllBtn">⊖ Collapse All</button>
         
         <div id="citationFilters" style="display: none; gap: 12px; align-items: center;">
+            <div class="filter-group">
+                <label>Keyword:</label>
+                <input type="text" id="keywordFilter" class="year-input" style="width: 100px;" placeholder="e.g. *neural*">
+            </div>
+
             <div class="filter-group">
                 <label>Refs Year:</label>
                 <input type="number" id="refStart" class="year-input" placeholder="Min">
@@ -357,8 +364,6 @@ async def serve_mindmap_page():
             <button class="btn btn-primary" id="applyFiltersBtn">Filter</button>
         </div>
 
-        <button class="btn" id="expandAllBtn">⊕ Expand All</button>
-        <button class="btn" id="collapseAllBtn">⊖ Collapse All</button>
         <span id="status">Loading...</span>
       </div>
       <div id="tree-container"></div>
@@ -486,13 +491,37 @@ async def serve_mindmap_page():
             const refEndInput = document.getElementById('refEnd').value;
             const citeStartInput = document.getElementById('citeStart').value;
             const citeEndInput = document.getElementById('citeEnd').value;
+            const keywordInputEl = document.getElementById('keywordFilter');
+            const keywordInput = keywordInputEl ? keywordInputEl.value.trim() : '';
 
             const refStart = refStartInput ? parseInt(refStartInput) : 0;
             const refEnd = refEndInput ? parseInt(refEndInput) : 9999;
             const citeStart = citeStartInput ? parseInt(citeStartInput) : 0;
             const citeEnd = citeEndInput ? parseInt(citeEndInput) : 9999;
 
-            console.log(`Filtering: Refs ${refStart}-${refEnd}, Cites ${citeStart}-${citeEnd}`);
+            let keywordRegex = null;
+            if (keywordInput) {
+                try {
+                    // Escape special regex chars: . + ? ^ $ { } ( ) | [ ] \
+                    // We do NOT escape * because we use it as wildcard
+                    const escapeRegex = (str) => {
+                        return str.replace(/[.+?^${}()|[\\]\\\\]/g, (match) => {
+                            return '\\\\' + match;
+                        });
+                    };
+                    
+                    // Split by *, escape parts, join by .*
+                    const parts = keywordInput.split('*');
+                    const escapedParts = parts.map(escapeRegex);
+                    const pattern = escapedParts.join('.*');
+                    
+                    keywordRegex = new RegExp(pattern, 'i');
+                } catch (e) {
+                    console.error("Regex error", e);
+                }
+            }
+
+            console.log(`Filtering: Refs ${refStart}-${refEnd}, Cites ${citeStart}-${citeEnd}, Keyword: ${keywordInput}`);
 
             // Deep copy to avoid mutating originalData
             const data = JSON.parse(JSON.stringify(originalData));
@@ -538,6 +567,12 @@ async def serve_mindmap_page():
                 } else {
                     // Leaf node (Paper)
                     if (currentContext === 'root') return true; 
+
+                    // Check keyword if present
+                    if (keywordRegex) {
+                        if (!node.name || typeof node.name !== 'string') return false;
+                        if (!keywordRegex.test(node.name)) return false;
+                    }
 
                     // If no year, keep it (or could filter out if strict)
                     if (!node.year) return true;
