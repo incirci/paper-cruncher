@@ -8,6 +8,9 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
     <script type="module">
@@ -16,7 +19,7 @@
             startOnLoad: false, 
             theme: 'default',
             securityLevel: 'loose',
-            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
+            fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
         });
         window.mermaid = mermaid;
     </script>
@@ -28,7 +31,7 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             height: 100vh;
             display: flex;
             background-color: #f0f2f5;
@@ -141,13 +144,11 @@
         }
 
         .sidebar-header {
-            padding: 20px;
+            padding: 16px;
             border-bottom: 1px solid #dce0e6;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            flex-direction: column;
-            gap: 12px;
         }
 
         .sidebar-title-row {
@@ -157,9 +158,10 @@
             width: 100%;
         }
 
-        .sidebar-header h2 {
-            font-size: 16px;
+        .sidebar-header h3 {
+            font-size: 14px;
             font-weight: 600;
+            color: #1f2937;
         }
 
         .progress-container {
@@ -195,7 +197,7 @@
         .papers-list {
             flex: 1;
             overflow-y: auto;
-            padding: 10px;
+            padding: 8px;
         }
 
         .paper-item {
@@ -235,6 +237,7 @@
             flex-direction: column;
             background: transparent;
             min-width: 0;
+            position: relative;
         }
 
         .header {
@@ -372,10 +375,12 @@
             max-width: 80%;
             padding: 12px 16px;
             border-radius: 12px;
-            line-height: 1.5;
+            line-height: 1.6;
             position: relative;
             overflow-wrap: break-word;
             word-wrap: break-word;
+            font-weight: 400;
+            font-size: 14px;
         }
 
         .message.user {
@@ -659,13 +664,39 @@
             box-shadow: 0 2px 6px rgba(0,0,0,0.05);
         }
 
+        .input-icon-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: #6b7280;
+            padding: 6px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            margin-right: 4px;
+            margin-bottom: 2px;
+        }
+
+        .input-icon-btn:hover {
+            color: #1f2937;
+            background-color: rgba(0,0,0,0.05);
+        }
+
+        .input-icon-btn svg {
+            width: 20px;
+            height: 20px;
+            stroke-width: 2;
+        }
+
         .input-box {
             flex: 1;
-            padding: 4px 8px;
+            padding: 8px 12px;
             padding-right: 40px;
             border: none;
             background: transparent;
-            font-size: 16px;
+            font-size: 14px;
             font-family: inherit;
             resize: none;
             max-height: 200px;
@@ -717,7 +748,7 @@
         }
 
         .scroll-to-bottom {
-            position: fixed;
+            position: absolute;
             right: 24px;
             bottom: 96px;
             padding: 8px 12px;
@@ -911,34 +942,46 @@
 
         .sessions-sidebar .sidebar-handle::after { content: '›'; font-size: 18px; }
         .sessions-sidebar.collapsed .sidebar-handle::after { content: '‹'; }
+
+        .icon-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 20px;
+            padding: 4px;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+
+        .icon-btn:hover {
+            background-color: #e0e0e0 !important;
+        }
     </style>
 </head>
 <body>
     <div class="sidebar" id="sidebar">
         <div class="sidebar-handle" onclick="toggleSidebar()"></div>
         <div class="sidebar-header">
-            <div class="sidebar-title-row">
-                <h2>Papers</h2>
-                <span id="paperCount">0</span>
-            </div>
-            <input 
-                type="file" 
-                id="paperUploadInput" 
-                accept="application/pdf" 
-                multiple 
-                style="display:none" 
-            >
-            <button class="btn btn-primary btn-block" id="uploadButton" onclick="triggerPaperUpload()" style="margin-bottom: 8px;">
-                ⬆️ Upload PDFs
+            <h3>Papers</h3>
+            <span id="paperCount">0</span>
+        </div>
+        <input 
+            type="file" 
+            id="paperUploadInput" 
+            accept="application/pdf" 
+            multiple 
+            style="display:none" 
+        >
+        <button class="btn btn-primary" id="uploadButton" onclick="triggerPaperUpload()" style="margin: 8px; width: calc(100% - 16px);">
+            ⬆️ Upload PDFs
+        </button>
+        <div style="display: flex; gap: 8px; margin: 0 8px 8px 8px; width: calc(100% - 16px);">
+            <button class="btn btn-secondary" id="mindmapButton" onclick="openMindmap()" style="flex: 1;">
+                🧠 View Mindmap
             </button>
-            <div style="display: flex; gap: 8px; width: 100%;">
-                <button class="btn btn-secondary" id="mindmapButton" onclick="openMindmap()" style="flex: 1;">
-                    🧠 View Mindmap
-                </button>
-                <button class="btn btn-secondary" id="mindmapQueryButton" onclick="editMindmapQuery()" title="Edit mindmap instructions" style="width: 40px; padding: 0;">
-                    ✏️
-                </button>
-            </div>
+            <button class="btn btn-secondary" id="mindmapQueryButton" onclick="editMindmapQuery()" title="Edit mindmap instructions" style="width: 40px; padding: 0;">
+                ✏️
+            </button>
         </div>
         
         <div id="progressContainer" class="progress-container">
@@ -957,17 +1000,6 @@
     </div>
 
     <div class="main-content">
-        <div class="header">
-            <div style="display: flex; gap: 12px; align-items: center;">
-                <button class="btn btn-secondary" id="notesButton" onclick="openNotes()">📝 Notes</button>
-            </div>
-            <div class="stats">
-                <button class="btn btn-secondary" style="margin-right: 12px;" onclick="clearChat()">🧹 Clear Chat</button>
-                <button class="btn btn-warning" style="margin-right: 12px;" onclick="pruneData()">✂ Prune Data</button>
-                <button class="btn btn-danger" onclick="resetAllData()">⚠ Reset All Data</button>
-            </div>
-        </div>
-
         <div class="chat-container" id="chatContainer">
             <div class="empty-state">Ask a question about the papers</div>
         </div>
@@ -977,6 +1009,23 @@
 
         <div class="input-container">
             <div class="input-wrapper">
+                <div style="display: flex; gap: 2px; margin-right: 4px;">
+                    <button class="input-icon-btn" onclick="clearChat()" title="Clear Chat">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                    </button>
+                    <button class="input-icon-btn" id="notesButton" onclick="openNotes()" title="Session Notes">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                            <line x1="16" y1="13" x2="8" y2="13"></line>
+                            <line x1="16" y1="17" x2="8" y2="17"></line>
+                            <polyline points="10 9 9 9 8 9"></polyline>
+                        </svg>
+                    </button>
+                </div>
                 <textarea 
                     class="input-box" 
                     id="messageInput" 
@@ -1001,6 +1050,10 @@
         <button class="btn btn-secondary" onclick="duplicateSession()" style="margin: 0 8px 8px 8px; width: calc(100% - 16px);">❐ Duplicate Session</button>
         <div class="sessions-list" id="sessionsList">
             <div class="empty-state" style="padding: 20px; text-align: center; color: #999; font-size: 13px;">No saved sessions</div>
+        </div>
+        <div class="sidebar-footer" style="padding: 16px; border-top: 1px solid #dce0e6; display: flex; flex-direction: column; gap: 8px; margin-top: auto;">
+            <button class="btn btn-warning btn-block" onclick="pruneData()">✂ Prune Data</button>
+            <button class="btn btn-danger btn-block" onclick="resetAllData()">⚠ Reset All Data</button>
         </div>
     </div>
 
