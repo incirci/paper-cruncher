@@ -1,41 +1,48 @@
 [app]
+# General application settings
 name = "Journal Article AI Assistant"
 version = "1.0.0"
 host = "localhost"
 port = 8000
 
 [agent]
+# Main AI model settings for generating answers
 model = "gemini-2.5-flash-preview-09-2025"  #"gemini-2.5-flash-preview-09-2025"
-max_context_tokens = 1000000 # max 1,048,576
-max_response_tokens = 30000  # max 65,536
+max_context_tokens = 1000000 # max 1,048,576. Safety limit for context window.
+max_response_tokens = 30000  # max 65,536. Limit for the model's output length.
 temperature = 0.2   # setting for factuality, lower (min 0.0) more factual, higher (max 1.0) more imaginative 
-# Orchestrator-specific settings (used only for planning)
-# Choose a stable, lower-temp model to reduce safety blocks
+
+# Orchestrator-specific settings (used only for planning retrieval strategies)
+# The orchestrator decides which papers to fetch and what to look for.
+# Choose a stable, lower-temp model to reduce safety blocks and ensure consistent planning.
 orchestrator_model = "gemini-2.5-flash-preview-09-2025"
 orchestrator_temperature = 0.2
 orchestrator_max_output_tokens = 4096
 
 [database]
-vector_db_path = "./data/vectordb"
-conversation_db_path = "./data/conversations.db"
+# Paths for data storage
+vector_db_path = "./data/vectordb" # Stores embeddings for semantic search
+conversation_db_path = "./data/conversations.db" # Stores chat history
 
 [chunking]
-chunk_size = 1000
-chunk_overlap = 200
-max_chunks_per_query = 5  # high density querries use *4 times more chunks
-min_title_snippet_chars = 2000
-title_snippet_chars = 10000
+# Settings for splitting papers into searchable text chunks
+chunk_size = 1000 # Number of characters per chunk
+chunk_overlap = 200 # Overlap between chunks to preserve context
+max_chunks_per_query = 5  # Base number of chunks to retrieve per search. High density queries use 4x this amount.
+min_title_snippet_chars = 2000 # Minimum characters to include in title/abstract snippets
+title_snippet_chars = 10000 # Maximum characters for title/abstract snippets
 
 [mindmap]
-# Control the depth and breadth of the generated knowledge graph
+# Control the depth and breadth of the generated knowledge graph (Mindmap)
 max_depth = 6  # Maximum tree depth (Root > Theme > Subtheme > Paper)
 min_themes = 3  # Minimum number of top-level themes
 max_themes = 7  # Maximum number of top-level themes
 node_name_max_length = 60  # Maximum characters for node names
-citation_node_min_size = 4
-citation_node_max_size = 15
+citation_node_min_size = 4 # Min size for nodes representing papers (visual)
+citation_node_max_size = 15 # Max size for nodes representing papers (visual)
 
 [image]
+# Settings for image generation (Imagen)
 enabled = false
 model = "models/gemini-2.5-flash-image-preview"
 mime_type = "image/png"
